@@ -39,6 +39,19 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
             }
+
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    let modes = AppearanceMode.allCases
+                    let currentIndex = modes.firstIndex(of: navigationState.appearanceMode) ?? 0
+                    let nextIndex = (currentIndex + 1) % modes.count
+                    navigationState.appearanceMode = modes[nextIndex]
+                    navigationState.coordinator?.setAppearance(modes[nextIndex])
+                } label: {
+                    Image(systemName: navigationState.appearanceMode.icon)
+                }
+                .help("Appearance: \(navigationState.appearanceMode.label)")
+            }
         }
     }
 }

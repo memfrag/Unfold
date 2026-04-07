@@ -2,10 +2,39 @@ import SwiftUI
 import WebKit
 import UniformTypeIdentifiers
 
+enum AppearanceMode: CaseIterable {
+    case system, light, dark
+
+    var label: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon"
+        }
+    }
+
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
 @Observable
 class NavigationState {
     var canGoBack = false
     var canGoForward = false
+    var appearanceMode: AppearanceMode = .system
     weak var coordinator: MarkdownWebView.Coordinator?
 }
 
@@ -74,6 +103,10 @@ struct MarkdownWebView: NSViewRepresentable {
 
         func reload() {
             reloadFromDisk()
+        }
+
+        func setAppearance(_ mode: AppearanceMode) {
+            webView?.appearance = mode.nsAppearance
         }
 
         private func reloadFromDisk() {
