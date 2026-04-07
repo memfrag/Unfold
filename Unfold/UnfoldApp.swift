@@ -31,6 +31,12 @@ struct UnfoldApp: App {
                 Button("Attributions") {
                     openWindow(id: AttributionsWindow.windowID)
                 }
+
+                Divider()
+
+                Button("Install Command Line Tool...") {
+                    CLIInstaller.install()
+                }
             }
             CommandGroup(after: .saveItem) {
                 Button("Export PDF...") {

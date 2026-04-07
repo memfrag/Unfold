@@ -1,0 +1,6 @@
+#!/bin/bash
+if [ $# -eq 0 ]; then
+    open -a Unfold
+else
+    open -a Unfold "$@"
+fi
