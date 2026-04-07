@@ -1,0 +1,15 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Unfold</title>
+        <item>
+            <title>1.0.0</title>
+            <pubDate>Tue, 07 Apr 2026 23:50:30 +0200</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.0.0/Unfold-1.0.0.dmg" length="4230286" type="application/octet-stream" sparkle:edSignature="Tx68oI5EIlgMd3ieQ+oe4T/4Hvt9yMi7u8/D20Y0mL3z+IkRayi6kOqPAu4UK+at6O0bM2DLJ4JsHQ8E90XNDQ=="/>
+        </item>
+    </channel>
+</rss>
