@@ -16,7 +16,9 @@ struct UnfoldApp: App {
     var body: some Scene {
         DocumentGroup(viewing: UnfoldDocument.self) { file in
             ContentView(document: file.document, fileURL: file.fileURL)
+                .frame(minWidth: 300, minHeight: 300)
         }
+        .defaultSize(width: 600, height: 700)
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates...") {
