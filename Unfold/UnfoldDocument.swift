@@ -1,10 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-extension UTType {
-    static let markdown = UTType("net.daringfireball.markdown")!
-}
-
 nonisolated struct UnfoldDocument: FileDocument {
     var text: String
 
@@ -12,7 +8,9 @@ nonisolated struct UnfoldDocument: FileDocument {
         self.text = text
     }
 
-    static var readableContentTypes: [UTType] { [.markdown] }
+    static var readableContentTypes: [UTType] {
+        [UTType("net.daringfireball.markdown")!]
+    }
     static var writableContentTypes: [UTType] { [] }
 
     init(configuration: ReadConfiguration) throws {
