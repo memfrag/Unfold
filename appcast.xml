@@ -3,6 +3,15 @@
     <channel>
         <title>Unfold</title>
         <item>
+            <title>1.1.1</title>
+            <pubDate>Wed, 08 Apr 2026 00:17:48 +0200</pubDate>
+            <sparkle:version>1.1.1</sparkle:version>
+            <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.1.1/Unfold-1.1.1.dmg" length="4228397" type="application/octet-stream" sparkle:edSignature="HrjvPFXroNCLozFaY83Jh/cX7yW/lnoGo+Trvp75RaRakVnJSKxFFH1q+R0ChxMjZZifNShj0f39I4Z/ft8ICQ=="/>
+        </item>
+        <item>
             <title>1.1.0</title>
             <pubDate>Wed, 08 Apr 2026 00:11:11 +0200</pubDate>
             <sparkle:version>1.1.0</sparkle:version>
