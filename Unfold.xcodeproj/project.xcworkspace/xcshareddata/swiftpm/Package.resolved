@@ -1,0 +1,15 @@
+{
+  "originHash" : "ce3a604dc364e0a48aff49b62c25464a74e1330ea67b1ab687f7a760e8981311",
+  "pins" : [
+    {
+      "identity" : "attributionsui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apparata/AttributionsUI.git",
+      "state" : {
+        "revision" : "a8120596dd47532aa0db2971609c7cf1dbba67af",
+        "version" : "1.1.1"
+      }
+    }
+  ],
+  "version" : 3
+}

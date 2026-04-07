@@ -1,20 +1,19 @@
-//
-//  
-//
-
 import SwiftUI
 import UniformTypeIdentifiers
+
+extension UTType {
+    static let markdown = UTType("net.daringfireball.markdown")!
+}
 
 nonisolated struct UnfoldDocument: FileDocument {
     var text: String
 
-    init(text: String = "Hello, world!") {
+    init(text: String = "") {
         self.text = text
     }
 
-    static let readableContentTypes = [
-        UTType(importedAs: "com.example.plain-text")
-    ]
+    static var readableContentTypes: [UTType] { [.markdown] }
+    static var writableContentTypes: [UTType] { [] }
 
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents,
@@ -24,9 +23,8 @@ nonisolated struct UnfoldDocument: FileDocument {
         }
         text = string
     }
-    
+
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let data = text.data(using: .utf8)!
-        return .init(regularFileWithContents: data)
+        throw CocoaError(.fileWriteNoPermission)
     }
 }
