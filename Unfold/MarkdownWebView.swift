@@ -50,25 +50,37 @@ struct MarkdownWebView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "navState")
         config.userContentController.add(context.coordinator, name: "tocData")
         config.userContentController.add(context.coordinator, name: "activeHeading")
+        let baseDir = fileURL?.deletingLastPathComponent()
+        let schemeHandler = LocalResourceSchemeHandler(baseDirectory: baseDir)
+        config.setURLSchemeHandler(schemeHandler, forURLScheme: "unfold-resource")
+        context.coordinator.schemeHandler = schemeHandler
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = .clear
+        #if DEBUG
+        webView.isInspectable = true
+        #endif
         context.coordinator.webView = webView
         context.coordinator.navigationState = navigationState
         navigationState.coordinator = context.coordinator
-        let html = buildHTML(markdown: markdown, title: "")
-        webView.loadHTMLString(html, baseURL: nil)
         context.coordinator.lastMarkdown = markdown
         if let fileURL {
             context.coordinator.startFileWatching(url: fileURL)
+        }
+        if hasLocalImages(markdown), let fileURL {
+            let dir = fileURL.deletingLastPathComponent()
+            context.coordinator.requestDirectoryAccess(dir: dir) {
+                context.coordinator.loadHTML(markdown: markdown, in: webView)
+            }
+        } else {
+            context.coordinator.loadHTML(markdown: markdown, in: webView)
         }
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         guard markdown != context.coordinator.lastMarkdown else { return }
-        let html = buildHTML(markdown: markdown, title: "")
-        webView.loadHTMLString(html, baseURL: nil)
+        context.coordinator.loadHTML(markdown: markdown, in: webView)
         context.coordinator.lastMarkdown = markdown
     }
 
@@ -78,8 +90,27 @@ struct MarkdownWebView: NSViewRepresentable {
         var lastMarkdown: String?
         weak var webView: WKWebView?
         var navigationState: NavigationState?
+        var schemeHandler: LocalResourceSchemeHandler?
         private var fileWatcher: FileWatcher?
         private var fileURL: URL?
+        private var grantedDirectoryURL: URL?
+
+        func requestDirectoryAccess(dir: URL, completion: @escaping () -> Void) {
+            let panel = NSOpenPanel()
+            panel.message = "Unfold needs access to this folder to display local images."
+            panel.prompt = "Grant Access"
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.directoryURL = dir
+            panel.begin { response in
+                if response == .OK, let url = panel.url {
+                    self.grantedDirectoryURL = url
+                    self.schemeHandler?.grantedDirectory = url
+                }
+                completion()
+            }
+        }
 
         func userContentController(
             _ userContentController: WKUserContentController,
@@ -149,19 +180,23 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         }
 
+        func loadHTML(markdown: String, in webView: WKWebView) {
+            let html = buildHTML(markdown: markdown, title: "")
+            schemeHandler?.pendingHTML = html
+            webView.load(URLRequest(url: URL(string: "unfold-resource://page")!))
+        }
+
         private func reloadFromDisk() {
             guard let fileURL,
                   let data = FileManager.default.contents(atPath: fileURL.path),
                   let markdown = String(data: data, encoding: .utf8) else {
-                // Fall back to last known markdown
-                guard let markdown = lastMarkdown else { return }
-                let html = buildHTML(markdown: markdown, title: "")
-                webView?.loadHTMLString(html, baseURL: nil)
+                guard let markdown = lastMarkdown, let webView else { return }
+                loadHTML(markdown: markdown, in: webView)
                 return
             }
             lastMarkdown = markdown
-            let html = buildHTML(markdown: markdown, title: "")
-            webView?.loadHTMLString(html, baseURL: nil)
+            guard let webView else { return }
+            loadHTML(markdown: markdown, in: webView)
         }
 
         func exportPDF() {
@@ -228,6 +263,102 @@ struct MarkdownWebView: NSViewRepresentable {
             } else {
                 decisionHandler(.allow)
             }
+        }
+    }
+}
+
+private func hasLocalImages(_ markdown: String) -> Bool {
+    // Match ![...](...) where the URL is not http/https
+    let pattern = #"!\[.*?\]\((?!https?://)(.*?)\)"#
+    return markdown.range(of: pattern, options: .regularExpression) != nil
+}
+
+class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
+    let baseDirectory: URL?
+    var pendingHTML: String?
+    var grantedDirectory: URL?
+
+    init(baseDirectory: URL?) {
+        self.baseDirectory = baseDirectory
+    }
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url else {
+            urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+
+        // Serve the main HTML page
+        if url.host == "page" {
+            guard let html = pendingHTML, let data = html.data(using: .utf8) else {
+                urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+                return
+            }
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/html; charset=utf-8"]
+            )!
+            urlSchemeTask.didReceive(response)
+            urlSchemeTask.didReceive(data)
+            urlSchemeTask.didFinish()
+            return
+        }
+
+        // Serve local resource files
+        let resolveDir = grantedDirectory ?? baseDirectory
+        guard let resolveDir, url.host == "resource" else {
+            urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+
+        // Path is /docs/images/file.png — strip leading slash
+        let rawPath = String(url.path.dropFirst())
+        let decodedPath = rawPath.removingPercentEncoding ?? rawPath
+        let fileURL = resolveDir.appendingPathComponent(decodedPath)
+
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            urlSchemeTask.didFailWithError(error)
+            return
+        }
+
+        let mimeType = mimeTypeForExtension(fileURL.pathExtension)
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: [
+                "Content-Type": mimeType,
+                "Content-Length": "\(data.count)",
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "no-cache"
+            ]
+        )!
+        urlSchemeTask.didReceive(response)
+        urlSchemeTask.didReceive(data)
+        urlSchemeTask.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+
+    private func mimeTypeForExtension(_ ext: String) -> String {
+        switch ext.lowercased() {
+        case "png": "image/png"
+        case "jpg", "jpeg": "image/jpeg"
+        case "gif": "image/gif"
+        case "svg": "image/svg+xml"
+        case "webp": "image/webp"
+        case "bmp": "image/bmp"
+        case "ico": "image/x-icon"
+        default: "application/octet-stream"
         }
     }
 }

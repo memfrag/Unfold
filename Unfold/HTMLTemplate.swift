@@ -360,6 +360,16 @@ func buildHTML(markdown: String, title: String) -> String {
             }
             return '<h' + depth + ' id="' + slug + '">' + text + '</h' + depth + '>';
         };
+        renderer.image = function({ href, title, text }) {
+            if (href && !/^https?:/i.test(href)) {
+                href = href.split('?')[0];
+                href = 'unfold-resource://resource/' + encodeURI(href);
+            }
+            var html = '<img src="' + href + '" alt="' + (text || '') + '"';
+            if (title) html += ' title="' + title + '"';
+            html += '>';
+            return html;
+        };
         marked.setOptions({
             gfm: true,
             breaks: false,
