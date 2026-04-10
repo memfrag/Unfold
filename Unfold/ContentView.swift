@@ -4,15 +4,13 @@ struct ContentView: View {
     let document: UnfoldDocument
     let fileURL: URL?
     @State private var navigationState = NavigationState()
-    @State private var showSidebar = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
 
     var body: some View {
-        HSplitView {
-            if showSidebar {
-                TOCSidebar(navigationState: navigationState)
-                    .frame(width: 220)
-            }
-
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            TOCSidebar(navigationState: navigationState)
+                .navigationSplitViewColumnWidth(min: 150, ideal: 220, max: 400)
+        } detail: {
             MarkdownWebView(
                 markdown: document.text,
                 fileURL: fileURL,
@@ -21,17 +19,6 @@ struct ContentView: View {
         }
         .focusedSceneValue(\.navigationState, navigationState)
         .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    withAnimation {
-                        showSidebar.toggle()
-                    }
-                } label: {
-                    Image(systemName: "list.bullet.indent")
-                }
-                .help(showSidebar ? "Hide Table of Contents" : "Show Table of Contents")
-            }
-
             ToolbarItemGroup(placement: .navigation) {
                 Button {
                     navigationState.coordinator?.goBack()
