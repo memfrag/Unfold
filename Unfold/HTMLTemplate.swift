@@ -344,12 +344,20 @@ func buildHTML(markdown: String, title: String) -> String {
     (function() {
         const md = `\(escapedMarkdown)`;
         const renderer = new marked.Renderer();
+        const usedSlugs = {};
         renderer.heading = function({ tokens, depth }) {
             const text = this.parser.parseInline(tokens);
             const raw = text.replace(/<[^>]+>/g, '');
-            const slug = raw.toLowerCase().trim()
+            var baseSlug = raw.toLowerCase().trim()
                 .replace(/[^\\w\\s-]/g, '')
                 .replace(/\\s+/g, '-');
+            var slug = baseSlug;
+            if (usedSlugs[baseSlug] !== undefined) {
+                usedSlugs[baseSlug]++;
+                slug = baseSlug + '-' + usedSlugs[baseSlug];
+            } else {
+                usedSlugs[baseSlug] = 0;
+            }
             return '<h' + depth + ' id="' + slug + '">' + text + '</h' + depth + '>';
         };
         marked.setOptions({
@@ -359,6 +367,7 @@ func buildHTML(markdown: String, title: String) -> String {
         });
         document.getElementById('content').innerHTML = marked.parse(md);
         hljs.highlightAll();
+
         document.querySelectorAll('pre').forEach(function(pre) {
             var btn = document.createElement('button');
             btn.className = 'copy-btn';
@@ -383,6 +392,15 @@ func buildHTML(markdown: String, title: String) -> String {
         var scrollHistory = [];
         var scrollHistoryIndex = -1;
 
+        // Send TOC data to Swift
+        var headings = [];
+        document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(el) {
+            headings.push({ text: el.textContent, depth: parseInt(el.tagName[1]), slug: el.id });
+        });
+        if (window.webkit && window.webkit.messageHandlers.tocData) {
+            window.webkit.messageHandlers.tocData.postMessage(headings);
+        }
+
         function postNavState() {
             window.webkit.messageHandlers.navState.postMessage({
                 canGoBack: scrollHistoryIndex > 0,
@@ -402,6 +420,22 @@ func buildHTML(markdown: String, title: String) -> String {
                 scrollHistoryIndex++;
                 window.scrollTo(0, scrollHistory[scrollHistoryIndex]);
                 postNavState();
+            }
+        };
+
+        window._scrollToHeading = function(slug) {
+            var target = document.getElementById(slug);
+            if (target) {
+                scrollHistory.splice(scrollHistoryIndex + 1);
+                scrollHistory.push(window.scrollY);
+                scrollHistoryIndex++;
+                target.scrollIntoView({ behavior: 'smooth' });
+                setTimeout(function() {
+                    scrollHistory.splice(scrollHistoryIndex + 1);
+                    scrollHistory.push(window.scrollY);
+                    scrollHistoryIndex++;
+                    postNavState();
+                }, 500);
             }
         };
 
@@ -430,6 +464,22 @@ func buildHTML(markdown: String, title: String) -> String {
                     }, 500);
                 }
             }
+        });
+
+        // Scroll tracking for active heading
+        var scrollTimer = null;
+        window.addEventListener('scroll', function() {
+            if (scrollTimer) return;
+            scrollTimer = setTimeout(function() {
+                scrollTimer = null;
+                var active = null;
+                document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(el) {
+                    if (el.getBoundingClientRect().top <= 20) active = el.id;
+                });
+                if (active && window.webkit && window.webkit.messageHandlers.activeHeading) {
+                    window.webkit.messageHandlers.activeHeading.postMessage(active);
+                }
+            }, 100);
         });
 
         var linkPreview = document.createElement('div');

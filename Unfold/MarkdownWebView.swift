@@ -35,6 +35,8 @@ class NavigationState {
     var canGoBack = false
     var canGoForward = false
     var appearanceMode: AppearanceMode = .system
+    var headings: [HeadingItem] = []
+    var activeHeadingSlug: String?
     weak var coordinator: MarkdownWebView.Coordinator?
 }
 
@@ -46,6 +48,8 @@ struct MarkdownWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "navState")
+        config.userContentController.add(context.coordinator, name: "tocData")
+        config.userContentController.add(context.coordinator, name: "activeHeading")
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = .clear
@@ -81,9 +85,34 @@ struct MarkdownWebView: NSViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            guard let dict = message.body as? [String: Bool] else { return }
-            navigationState?.canGoBack = dict["canGoBack"] ?? false
-            navigationState?.canGoForward = dict["canGoForward"] ?? false
+            switch message.name {
+            case "navState":
+                guard let dict = message.body as? [String: Bool] else { return }
+                navigationState?.canGoBack = dict["canGoBack"] ?? false
+                navigationState?.canGoForward = dict["canGoForward"] ?? false
+
+            case "tocData":
+                guard let list = message.body as? [[String: Any]] else { return }
+                let flat = list.compactMap { entry -> (text: String, depth: Int, slug: String)? in
+                    guard let text = entry["text"] as? String,
+                          let depth = entry["depth"] as? Int,
+                          let slug = entry["slug"] as? String else { return nil }
+                    return (text, depth, slug)
+                }
+                var newHeadings = buildHeadingTree(from: flat)
+                if let nav = navigationState, !nav.headings.isEmpty {
+                    preserveExpansionState(in: &newHeadings, from: nav.headings)
+                }
+                navigationState?.headings = newHeadings
+
+            case "activeHeading":
+                guard !suppressScrollTracking,
+                      let slug = message.body as? String else { return }
+                navigationState?.activeHeadingSlug = slug
+
+            default:
+                break
+            }
         }
 
         func startFileWatching(url: URL) {
@@ -107,6 +136,17 @@ struct MarkdownWebView: NSViewRepresentable {
 
         func setAppearance(_ mode: AppearanceMode) {
             webView?.appearance = mode.nsAppearance
+        }
+
+        private var suppressScrollTracking = false
+
+        func scrollToHeading(_ slug: String) {
+            navigationState?.activeHeadingSlug = slug
+            suppressScrollTracking = true
+            webView?.evaluateJavaScript("window._scrollToHeading('\(slug)')", completionHandler: nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.suppressScrollTracking = false
+            }
         }
 
         private func reloadFromDisk() {
