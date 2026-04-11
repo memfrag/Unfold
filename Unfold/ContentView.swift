@@ -4,18 +4,17 @@ struct ContentView: View {
     let document: UnfoldDocument
     let fileURL: URL?
     @State private var navigationState = NavigationState()
-    @State private var columnVisibility: NavigationSplitViewVisibility = .detailOnly
+    @State private var showInspector = false
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        MarkdownWebView(
+            markdown: document.text,
+            fileURL: fileURL,
+            navigationState: navigationState
+        )
+        .inspector(isPresented: $showInspector) {
             TOCSidebar(navigationState: navigationState)
-                .navigationSplitViewColumnWidth(min: 150, ideal: 220, max: 400)
-        } detail: {
-            MarkdownWebView(
-                markdown: document.text,
-                fileURL: fileURL,
-                navigationState: navigationState
-            )
+                .inspectorColumnWidth(min: 150, ideal: 220, max: 400)
         }
         .focusedSceneValue(\.navigationState, navigationState)
         .toolbar {
@@ -45,6 +44,7 @@ struct ContentView: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
             }
+            .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -58,6 +58,17 @@ struct ContentView: View {
                 }
                 .help("Appearance: \(navigationState.appearanceMode.label)")
             }
+            .sharedBackgroundVisibility(.hidden)
+
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showInspector.toggle()
+                } label: {
+                    Image(systemName: "list.bullet.indent")
+                }
+                .help(showInspector ? "Hide Table of Contents" : "Show Table of Contents")
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
     }
 }
