@@ -104,6 +104,15 @@ struct MarkdownWebView: NSViewRepresentable {
                 return
             }
 
+            // Try resolving a stored bookmark
+            if let bookmarkedURL = BookmarkStore.resolveBookmark(for: dir.path) {
+                self.grantedDirectoryURL = bookmarkedURL
+                self.schemeHandler?.grantedDirectory = bookmarkedURL
+                completion()
+                return
+            }
+
+            // Ask the user for access
             let panel = NSOpenPanel()
             panel.message = "Unfold needs access to this folder to display local images."
             panel.prompt = "Grant Access"
@@ -113,6 +122,7 @@ struct MarkdownWebView: NSViewRepresentable {
             panel.directoryURL = dir
             panel.begin { response in
                 if response == .OK, let url = panel.url {
+                    BookmarkStore.saveBookmark(for: url)
                     self.grantedDirectoryURL = url
                     self.schemeHandler?.grantedDirectory = url
                 }
