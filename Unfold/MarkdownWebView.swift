@@ -96,6 +96,14 @@ struct MarkdownWebView: NSViewRepresentable {
         private var grantedDirectoryURL: URL?
 
         func requestDirectoryAccess(dir: URL, completion: @escaping () -> Void) {
+            // Check if we already have access
+            if FileManager.default.isReadableFile(atPath: dir.path) {
+                self.grantedDirectoryURL = dir
+                self.schemeHandler?.grantedDirectory = dir
+                completion()
+                return
+            }
+
             let panel = NSOpenPanel()
             panel.message = "Unfold needs access to this folder to display local images."
             panel.prompt = "Grant Access"
