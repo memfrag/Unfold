@@ -177,7 +177,12 @@ struct MarkdownWebView: NSViewRepresentable {
                 }
             }
 
-            window.setFrame(frame, display: true, animate: true)
+            let target = frame
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                window.animator().setFrame(target, display: true)
+            }
         }
 
         private var suppressScrollTracking = false
