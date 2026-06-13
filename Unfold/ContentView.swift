@@ -1,17 +1,29 @@
 import SwiftUI
 
 struct ContentView: View {
-    let document: UnfoldDocument
+    @Binding var document: UnfoldDocument
     let fileURL: URL?
     @State private var navigationState = NavigationState()
     @State private var showInspector = false
 
     var body: some View {
-        MarkdownWebView(
-            markdown: document.text,
-            fileURL: fileURL,
-            navigationState: navigationState
-        )
+        HSplitView {
+            if navigationState.isEditing {
+                MarkdownTextView(
+                    text: $document.text,
+                    navigationState: navigationState
+                )
+                .frame(minWidth: 250)
+            }
+
+            MarkdownWebView(
+                markdown: document.text,
+                fileURL: fileURL,
+                navigationState: navigationState
+            )
+            .frame(minWidth: 320)
+            .id("preview")
+        }
         .inspector(isPresented: $showInspector) {
             TOCSidebar(navigationState: navigationState)
                 .inspectorColumnWidth(min: 150, ideal: 220, max: 400)
@@ -35,6 +47,16 @@ struct ContentView: View {
                 .disabled(!navigationState.canGoForward)
                 .keyboardShortcut("]", modifiers: .command)
             }
+
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    navigationState.isEditing.toggle()
+                } label: {
+                    Image(systemName: navigationState.isEditing ? "pencil.circle.fill" : "pencil")
+                }
+                .help(navigationState.isEditing ? "Done Editing" : "Edit")
+            }
+            .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .primaryAction) {
                 Button {

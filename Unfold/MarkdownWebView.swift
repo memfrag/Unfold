@@ -37,6 +37,7 @@ class NavigationState {
     var appearanceMode: AppearanceMode = .system
     var headings: [HeadingItem] = []
     var activeHeadingSlug: String?
+    var isEditing = false
     weak var coordinator: MarkdownWebView.Coordinator?
 }
 
@@ -63,18 +64,20 @@ struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.navigationState = navigationState
         navigationState.coordinator = context.coordinator
+        context.coordinator.fileURL = fileURL
         context.coordinator.lastMarkdown = markdown
-        if let fileURL {
-            context.coordinator.startFileWatching(url: fileURL)
-        }
-        context.coordinator.loadHTML(markdown: markdown, in: webView)
+        context.coordinator.loadShell(in: webView)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         guard markdown != context.coordinator.lastMarkdown else { return }
-        context.coordinator.loadHTML(markdown: markdown, in: webView)
         context.coordinator.lastMarkdown = markdown
+        // Live edits re-render in place (preserving scroll) after a debounce.
+        // The very first render is driven from didFinish once the page loads.
+        if context.coordinator.isPageLoaded {
+            context.coordinator.scheduleRender()
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -84,8 +87,14 @@ struct MarkdownWebView: NSViewRepresentable {
         weak var webView: WKWebView?
         var navigationState: NavigationState?
         var schemeHandler: LocalResourceSchemeHandler?
-        private var fileWatcher: FileWatcher?
-        private var fileURL: URL?
+        var fileURL: URL?
+        var isPageLoaded = false
+        private var renderWorkItem: DispatchWorkItem?
+        private var syncWorkItem: DispatchWorkItem?
+        private var pendingSyncLine: Int?
+
+        /// Debounce for in-place preview re-renders while typing.
+        private let renderDebounce: TimeInterval = 1.0
 
         func userContentController(
             _ userContentController: WKUserContentController,
@@ -121,13 +130,6 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         }
 
-        func startFileWatching(url: URL) {
-            fileURL = url
-            fileWatcher = FileWatcher(path: url.path) { [weak self] in
-                self?.reloadFromDisk()
-            }
-        }
-
         func goBack() {
             webView?.evaluateJavaScript("window._goBack()", completionHandler: nil)
         }
@@ -137,7 +139,9 @@ struct MarkdownWebView: NSViewRepresentable {
         }
 
         func reload() {
-            reloadFromDisk()
+            // Force a full preview re-render from the current in-memory text.
+            // Never reads disk, so it's safe while editing.
+            renderNow()
         }
 
         func setAppearance(_ mode: AppearanceMode) {
@@ -155,23 +159,61 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         }
 
-        func loadHTML(markdown: String, in webView: WKWebView) {
-            let html = buildHTML(markdown: markdown, title: "")
-            schemeHandler?.pendingHTML = html
+        /// Loads the static HTML shell. The Markdown itself is rendered into the
+        /// page by `renderNow()` once `didFinish` fires.
+        func loadShell(in webView: WKWebView) {
+            isPageLoaded = false
+            schemeHandler?.pendingHTML = buildHTML()
             webView.load(URLRequest(url: URL(string: "unfold-resource://page")!))
         }
 
-        private func reloadFromDisk() {
-            guard let fileURL,
-                  let data = FileManager.default.contents(atPath: fileURL.path),
-                  let markdown = String(data: data, encoding: .utf8) else {
-                guard let markdown = lastMarkdown, let webView else { return }
-                loadHTML(markdown: markdown, in: webView)
-                return
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isPageLoaded = true
+            renderNow()
+        }
+
+        /// Re-render the current Markdown in place, immediately.
+        func renderNow() {
+            renderWorkItem?.cancel()
+            renderWorkItem = nil
+            guard isPageLoaded, let webView, let markdown = lastMarkdown else { return }
+            webView.callAsyncJavaScript(
+                "window._render(md)",
+                arguments: ["md": markdown],
+                in: nil,
+                in: .page,
+                completionHandler: nil
+            )
+        }
+
+        /// Schedule a debounced in-place re-render (used while typing).
+        func scheduleRender() {
+            renderWorkItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in self?.renderNow() }
+            renderWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + renderDebounce, execute: item)
+        }
+
+        /// Editor → preview sync: scroll the preview to the block at `line`.
+        /// Throttled so a stream of caret events doesn't flood the bridge.
+        func syncToLine(_ line: Int) {
+            pendingSyncLine = line
+            guard syncWorkItem == nil else { return }
+            let item = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.syncWorkItem = nil
+                guard self.isPageLoaded, let webView = self.webView,
+                      let l = self.pendingSyncLine else { return }
+                webView.callAsyncJavaScript(
+                    "window._syncToLine(line)",
+                    arguments: ["line": l],
+                    in: nil,
+                    in: .page,
+                    completionHandler: nil
+                )
             }
-            lastMarkdown = markdown
-            guard let webView else { return }
-            loadHTML(markdown: markdown, in: webView)
+            syncWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: item)
         }
 
         func exportPDF() {

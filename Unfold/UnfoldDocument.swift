@@ -11,7 +11,6 @@ nonisolated struct UnfoldDocument: FileDocument {
     static var readableContentTypes: [UTType] {
         [UTType("net.daringfireball.markdown")!]
     }
-    static var writableContentTypes: [UTType] { [] }
 
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents,
@@ -23,6 +22,7 @@ nonisolated struct UnfoldDocument: FileDocument {
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        throw CocoaError(.fileWriteNoPermission)
+        // Write the text verbatim as UTF-8 (no BOM, no newline normalization).
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }

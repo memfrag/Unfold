@@ -8,21 +8,11 @@ private func loadBundleResource(_ name: String, _ ext: String) -> String {
     return contents
 }
 
-private func escapeForJSTemplateLiteral(_ s: String) -> String {
-    var result = s
-    result = result.replacingOccurrences(of: "\\", with: "\\\\")
-    result = result.replacingOccurrences(of: "`", with: "\\`")
-    result = result.replacingOccurrences(of: "${", with: "\\${")
-    return result
-}
-
-func buildHTML(markdown: String, title: String) -> String {
-    let escapedMarkdown = escapeForJSTemplateLiteral(markdown)
-    let escapedTitle = title
-        .replacingOccurrences(of: "&", with: "&amp;")
-        .replacingOccurrences(of: "<", with: "&lt;")
-        .replacingOccurrences(of: ">", with: "&gt;")
-
+/// Builds the static HTML shell. The page starts with an empty `#content`;
+/// the actual Markdown is rendered by calling `window._render(md)` from Swift
+/// once the page has loaded (see MarkdownWebView). This keeps a single render
+/// path and avoids embedding/escaping the Markdown into the document.
+func buildHTML() -> String {
     let markedJS = loadBundleResource("marked.min", "js")
     let highlightJS = loadBundleResource("highlight.min", "js")
     let highlightLightCSS = loadBundleResource("theme.min", "css")
@@ -34,7 +24,7 @@ func buildHTML(markdown: String, title: String) -> String {
     <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>\(escapedTitle)</title>
+    <title></title>
     <style>
     :root {
         --bg: #ffffff;
@@ -342,74 +332,122 @@ func buildHTML(markdown: String, title: String) -> String {
     <script>\(highlightJS)</script>
     <script>
     (function() {
-        const md = `\(escapedMarkdown)`;
-        const renderer = new marked.Renderer();
-        const usedSlugs = {};
-        renderer.heading = function({ tokens, depth }) {
-            const text = this.parser.parseInline(tokens);
-            const raw = text.replace(/<[^>]+>/g, '');
-            var baseSlug = raw.toLowerCase().trim()
-                .replace(/[^\\w\\s-]/g, '')
-                .replace(/\\s+/g, '-');
-            var slug = baseSlug;
-            if (usedSlugs[baseSlug] !== undefined) {
-                usedSlugs[baseSlug]++;
-                slug = baseSlug + '-' + usedSlugs[baseSlug];
-            } else {
-                usedSlugs[baseSlug] = 0;
-            }
-            return '<h' + depth + ' id="' + slug + '">' + text + '</h' + depth + '>';
-        };
-        renderer.image = function({ href, title, text }) {
-            if (href && !/^https?:/i.test(href)) {
-                href = href.split('?')[0];
-                href = 'unfold-resource://resource/' + encodeURI(href);
-            }
-            var html = '<img src="' + href + '" alt="' + (text || '') + '"';
-            if (title) html += ' title="' + title + '"';
-            html += '>';
-            return html;
-        };
-        marked.setOptions({
-            gfm: true,
-            breaks: false,
-            renderer: renderer
-        });
-        document.getElementById('content').innerHTML = marked.parse(md);
-        hljs.highlightAll();
+        var contentEl = document.getElementById('content');
 
-        document.querySelectorAll('pre').forEach(function(pre) {
-            var btn = document.createElement('button');
-            btn.className = 'copy-btn';
-            btn.textContent = 'Copy';
-            btn.addEventListener('click', function() {
-                var code = pre.querySelector('code');
-                var text = code ? code.textContent : pre.textContent;
-                var ta = document.createElement('textarea');
-                ta.value = text;
-                ta.style.position = 'fixed';
-                ta.style.opacity = '0';
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                btn.textContent = 'Copied!';
-                setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+        function buildRenderer() {
+            var renderer = new marked.Renderer();
+            var usedSlugs = {};
+            renderer.heading = function({ tokens, depth }) {
+                var text = this.parser.parseInline(tokens);
+                var raw = text.replace(/<[^>]+>/g, '');
+                var baseSlug = raw.toLowerCase().trim()
+                    .replace(/[^\\w\\s-]/g, '')
+                    .replace(/\\s+/g, '-');
+                var slug = baseSlug;
+                if (usedSlugs[baseSlug] !== undefined) {
+                    usedSlugs[baseSlug]++;
+                    slug = baseSlug + '-' + usedSlugs[baseSlug];
+                } else {
+                    usedSlugs[baseSlug] = 0;
+                }
+                return '<h' + depth + ' id="' + slug + '">' + text + '</h' + depth + '>';
+            };
+            renderer.image = function({ href, title, text }) {
+                if (href && !/^https?:/i.test(href)) {
+                    href = href.split('?')[0];
+                    href = 'unfold-resource://resource/' + encodeURI(href);
+                }
+                var html = '<img src="' + href + '" alt="' + (text || '') + '"';
+                if (title) html += ' title="' + title + '"';
+                html += '>';
+                return html;
+            };
+            return renderer;
+        }
+
+        // Render Markdown into #content, tagging each top-level block element
+        // with its 0-based source line (data-line) for editor->preview sync.
+        // Preserves scroll position across re-renders.
+        window._render = function(md) {
+            var y = window.scrollY;
+            var renderer = buildRenderer();
+            marked.setOptions({ gfm: true, breaks: false, renderer: renderer });
+
+            var tokens = marked.lexer(md);
+            var line = 0;
+            var html = '';
+            for (var i = 0; i < tokens.length; i++) {
+                var token = tokens[i];
+                var startLine = line;
+                var nl = (token.raw.match(/\\n/g) || []).length;
+                line += nl;
+                var single = [token];
+                single.links = tokens.links;
+                var piece = marked.parser(single, { renderer: renderer });
+                // Inject data-line into the first opening tag of this block.
+                piece = piece.replace(/^(\\s*<[a-zA-Z][\\w-]*)/, '$1 data-line="' + startLine + '"');
+                html += piece;
+            }
+            contentEl.innerHTML = html;
+
+            hljs.highlightAll();
+
+            contentEl.querySelectorAll('pre').forEach(function(pre) {
+                var btn = document.createElement('button');
+                btn.className = 'copy-btn';
+                btn.textContent = 'Copy';
+                btn.addEventListener('click', function() {
+                    var code = pre.querySelector('code');
+                    var text = code ? code.textContent : pre.textContent;
+                    var ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    btn.textContent = 'Copied!';
+                    setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+                });
+                pre.appendChild(btn);
             });
-            pre.appendChild(btn);
-        });
+
+            // Send TOC data to Swift
+            var headings = [];
+            contentEl.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(el) {
+                headings.push({ text: el.textContent, depth: parseInt(el.tagName[1]), slug: el.id });
+            });
+            if (window.webkit && window.webkit.messageHandlers.tocData) {
+                window.webkit.messageHandlers.tocData.postMessage(headings);
+            }
+
+            window.scrollTo(0, y);
+        };
+
+        // Scroll the block at/above the given source line into view, but only
+        // when it isn't already visible (no jitter while editing in place).
+        window._syncToLine = function(line) {
+            var els = contentEl.querySelectorAll('[data-line]');
+            var target = null;
+            for (var i = 0; i < els.length; i++) {
+                var l = parseInt(els[i].getAttribute('data-line'), 10);
+                if (l <= line) target = els[i]; else break;
+            }
+            if (!target) return;
+            var rect = target.getBoundingClientRect();
+            var h = window.innerHeight;
+            var fullyVisible = rect.top >= 0 && rect.bottom <= h;
+            var tallCovering = rect.top <= 0 && rect.bottom >= h;
+            if (!fullyVisible && !tallCovering) {
+                target.scrollIntoView({ block: 'nearest' });
+            }
+        };
+
+        // ---- One-time setup (survives #content re-renders via event delegation) ----
 
         var scrollHistory = [];
         var scrollHistoryIndex = -1;
-
-        // Send TOC data to Swift
-        var headings = [];
-        document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(el) {
-            headings.push({ text: el.textContent, depth: parseInt(el.tagName[1]), slug: el.id });
-        });
-        if (window.webkit && window.webkit.messageHandlers.tocData) {
-            window.webkit.messageHandlers.tocData.postMessage(headings);
-        }
 
         function postNavState() {
             window.webkit.messageHandlers.navState.postMessage({
