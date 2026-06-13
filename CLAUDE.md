@@ -58,7 +58,11 @@ There is no file watcher. External changes to the open file are adopted by the S
 
 ### Commands & menus
 
-`UnfoldApp` wires menu commands. Export PDF (Cmd+E), Print (Cmd+P), back/forward (Cmd+[ / Cmd+]), reload (Cmd+R), Show/Hide Editor (Cmd+Shift+E), appearance toggle, and TOC toggle are driven through `NavigationState` / its `coordinator` (a `@FocusedValue`). The shared `@Observable NavigationState` (notably `isEditing`) ties the menu/toolbar toggles, the split layout, and the coordinator together. File > New is suppressed (the app opens existing documents). PDF export forces light appearance temporarily for legible output. `CLIInstaller` offers a copyable `sudo cp` command to install the bundled `unfold` CLI shim (`Unfold/Resources/unfold`) into `/usr/local/bin`.
+`UnfoldApp` wires menu commands. Export PDF (Cmd+E), Print (Cmd+P), back/forward (Cmd+[ / Cmd+]), reload (Cmd+R), Show/Hide Editor (Cmd+Shift+E), appearance toggle, and TOC toggle are driven through `NavigationState` / its `coordinator` (a `@FocusedValue`). The shared `@Observable NavigationState` (notably `isEditing`) ties the menu/toolbar toggles, the split layout, and the coordinator together. File > New (Cmd+N) creates a blank untitled document. PDF export forces light appearance temporarily for legible output. `CLIInstaller` offers a copyable `sudo cp` command to install the bundled `unfold` CLI shim (`Unfold/Resources/unfold`) into `/usr/local/bin`.
+
+### Preferences / theme
+
+A `Settings` scene (`SettingsView`) has a **Theme** tab of color wells for the editor's Markdown syntax-highlighting colors. `EditorTheme` (an `@Observable` singleton) stores per-element overrides in `UserDefaults` (hex), falling back to adaptive system-color defaults. `MarkdownSyntaxHighlighter` reads `EditorTheme.shared`; changing a color posts `.editorThemeChanged`, which the editor's coordinator observes to re-highlight.
 
 ## Conventions
 

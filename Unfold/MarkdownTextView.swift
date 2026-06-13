@@ -22,6 +22,7 @@ struct MarkdownTextView: NSViewRepresentable {
 
         let textView = scrollView.documentView as! NSTextView
         textView.delegate = context.coordinator
+        context.coordinator.textView = textView
         // The storage delegate highlights each edit (scoped to the edited range).
         // Setting it before `string` below means the initial content is highlighted too.
         textView.textStorage?.delegate = context.coordinator
@@ -79,8 +80,24 @@ struct MarkdownTextView: NSViewRepresentable {
     class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: MarkdownTextView
         var hasFocused = false
+        weak var textView: NSTextView?
+        private var themeObserver: NSObjectProtocol?
 
-        init(_ parent: MarkdownTextView) { self.parent = parent }
+        init(_ parent: MarkdownTextView) {
+            self.parent = parent
+            super.init()
+            // Re-highlight the whole document when the user changes theme colors.
+            themeObserver = NotificationCenter.default.addObserver(
+                forName: .editorThemeChanged, object: nil, queue: .main
+            ) { [weak self] _ in
+                guard let storage = self?.textView?.textStorage else { return }
+                MarkdownSyntaxHighlighter.apply(to: storage, baseFont: MarkdownTextView.editorFont)
+            }
+        }
+
+        deinit {
+            if let themeObserver { NotificationCenter.default.removeObserver(themeObserver) }
+        }
 
         // Re-highlight only the edited region (expanded to enclosing paragraphs
         // and any fenced block it touches) rather than the whole document. Runs

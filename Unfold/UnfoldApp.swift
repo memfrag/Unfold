@@ -20,9 +20,6 @@ struct UnfoldApp: App {
         }
         .defaultSize(width: 600, height: 700)
         .commands {
-            // The app opens existing documents; it doesn't author new ones.
-            CommandGroup(replacing: .newItem) {}
-
             CommandGroup(after: .toolbar) {
                 Button(navigationState?.isEditing == true ? "Hide Editor" : "Show Editor") {
                     navigationState?.isEditing.toggle()
@@ -63,6 +60,10 @@ struct UnfoldApp: App {
                 .keyboardShortcut("p", modifiers: .command)
                 .disabled(navigationState == nil)
             }
+        }
+
+        Settings {
+            SettingsView()
         }
 
         AttributionsWindow(

@@ -23,65 +23,66 @@ enum MarkdownSyntaxHighlighter {
         guard range.length > 0 else { return }
         let ns = storage.string as NSString
 
+        let theme = EditorTheme.shared
+
         // Reset the range to the base style first.
         storage.setAttributes([.font: baseFont, .foregroundColor: NSColor.labelColor], range: range)
 
         let boldFont = font(baseFont, traits: .bold)
         let italicFont = font(baseFont, traits: .italic)
-
-        let punctuation = NSColor.tertiaryLabelColor
-        let codeColor = NSColor.systemPink
-        let fenceColor = NSColor.systemTeal
+        let markerColor = theme.nsColor(for: .markers)
 
         // Emphasis: bold **..** / __..__ then italic *..* / _.._
         enumerate(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#, in: ns, range: range) { m in
             storage.addAttribute(.font, value: boldFont, range: m.range)
-            tintMarkers(storage, m.range, length: 2, color: punctuation)
+            storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .bold), range: m.range)
+            tintMarkers(storage, m.range, length: 2, color: markerColor)
         }
         enumerate(#"(?<![\*_])([\*_])(?![\*_])(?=\S)(.+?)(?<=\S)\1(?![\*_])"#, in: ns, range: range) { m in
             storage.addAttribute(.font, value: italicFont, range: m.range)
-            tintMarkers(storage, m.range, length: 1, color: punctuation)
+            storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .italic), range: m.range)
+            tintMarkers(storage, m.range, length: 1, color: markerColor)
         }
 
         // Inline code `..`
         enumerate(#"`[^`\n]+`"#, in: ns, range: range) { m in
-            storage.addAttribute(.foregroundColor, value: codeColor, range: m.range)
+            storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .inlineCode), range: m.range)
         }
 
         // Links [text](url)
         enumerate(#"\[([^\]\n]+)\]\(([^)\n]+)\)"#, in: ns, range: range) { m in
-            storage.addAttribute(.foregroundColor, value: punctuation, range: m.range)
+            storage.addAttribute(.foregroundColor, value: markerColor, range: m.range)
             if m.numberOfRanges > 1 {
-                storage.addAttribute(.foregroundColor, value: NSColor.linkColor, range: m.range(at: 1))
+                storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .link), range: m.range(at: 1))
             }
             if m.numberOfRanges > 2 {
-                storage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: m.range(at: 2))
+                storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .linkURL), range: m.range(at: 2))
             }
         }
 
         // List markers (-, *, +, 1., 1))
         enumerate(#"(?m)^[ \t]*([-*+]|\d+[.)])[ \t]+"#, in: ns, range: range) { m in
             if m.numberOfRanges > 1 {
-                storage.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: m.range(at: 1))
+                storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .listMarker), range: m.range(at: 1))
             }
         }
 
         // Blockquotes
         enumerate(#"(?m)^[ \t]*>.*$"#, in: ns, range: range) { m in
-            storage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: m.range)
+            storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .blockquote), range: m.range)
         }
 
-        // Headings (# .. ######) — whole line bold and yellow, including the #'s.
+        // Headings (# .. ######) — whole line bold, including the #'s.
         enumerate(#"(?m)^[ \t]{0,3}(#{1,6})[ \t]+.*$"#, in: ns, range: range) { m in
             storage.addAttribute(.font, value: boldFont, range: m.range)
-            storage.addAttribute(.foregroundColor, value: NSColor.systemYellow, range: m.range)
+            storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .heading), range: m.range)
         }
 
         // Fenced code blocks — applied last so they override any inline styling
         // that happens to fall inside the block.
         enumerate(#"(?m)^[ \t]*```[\s\S]*?^[ \t]*```[ \t]*$"#, in: ns, range: range) { m in
             storage.addAttribute(.font, value: baseFont, range: m.range)
-            storage.addAttribute(.foregroundColor, value: fenceColor, range: m.range)
+            storage.addAttribute(.foregroundColor, value: theme.nsColor(for: .codeBlock), range: m.range)
         }
     }
 
