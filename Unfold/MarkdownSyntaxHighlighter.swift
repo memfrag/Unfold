@@ -71,13 +71,10 @@ enum MarkdownSyntaxHighlighter {
             storage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: m.range)
         }
 
-        // Headings (# .. ######) — whole line bold, the leading #'s dimmed.
+        // Headings (# .. ######) — whole line bold and yellow, including the #'s.
         enumerate(#"(?m)^[ \t]{0,3}(#{1,6})[ \t]+.*$"#, in: ns, range: range) { m in
             storage.addAttribute(.font, value: boldFont, range: m.range)
-            storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: m.range)
-            if m.numberOfRanges > 1 {
-                storage.addAttribute(.foregroundColor, value: punctuation, range: m.range(at: 1))
-            }
+            storage.addAttribute(.foregroundColor, value: NSColor.systemYellow, range: m.range)
         }
 
         // Fenced code blocks — applied last so they override any inline styling
