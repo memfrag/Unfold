@@ -149,25 +149,34 @@ struct MarkdownWebView: NSViewRepresentable {
         }
 
         /// Widen the window to make room for the editor pane when entering edit
-        /// mode, and shrink it back to the viewer's size when leaving. Clamped
-        /// to the screen and animated.
+        /// mode, and shrink it back to the viewer's size when leaving. The right
+        /// edge is anchored — the window grows/shrinks on the left, so the
+        /// preview stays put while the editor slides in. Clamped to the screen
+        /// and animated.
         func adjustWindow(forEditing editing: Bool, by delta: CGFloat = 600) {
             guard let window = webView?.window else { return }
             var frame = window.frame
-            if editing {
-                frame.size.width += delta
-            } else {
-                frame.size.width = max(frame.size.width - delta, 300)
-            }
+            let rightEdge = frame.maxX
+            frame.size.width = editing
+                ? frame.size.width + delta
+                : max(frame.size.width - delta, 300)
+
             if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
                 frame.size.width = min(frame.size.width, visible.size.width)
-                if frame.maxX > visible.maxX {
-                    frame.origin.x = max(visible.minX, visible.maxX - frame.size.width)
-                }
+            }
+
+            // Anchor the right edge: keep maxX fixed, move the left edge.
+            frame.origin.x = rightEdge - frame.size.width
+
+            if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
                 if frame.minX < visible.minX {
                     frame.origin.x = visible.minX
                 }
+                if frame.maxX > visible.maxX {
+                    frame.origin.x = visible.maxX - frame.size.width
+                }
             }
+
             window.setFrame(frame, display: true, animate: true)
         }
 
