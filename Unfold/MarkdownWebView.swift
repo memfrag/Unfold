@@ -148,6 +148,29 @@ struct MarkdownWebView: NSViewRepresentable {
             webView?.appearance = mode.nsAppearance
         }
 
+        /// Widen the window to make room for the editor pane when entering edit
+        /// mode, and shrink it back to the viewer's size when leaving. Clamped
+        /// to the screen and animated.
+        func adjustWindow(forEditing editing: Bool, by delta: CGFloat = 600) {
+            guard let window = webView?.window else { return }
+            var frame = window.frame
+            if editing {
+                frame.size.width += delta
+            } else {
+                frame.size.width = max(frame.size.width - delta, 300)
+            }
+            if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+                frame.size.width = min(frame.size.width, visible.size.width)
+                if frame.maxX > visible.maxX {
+                    frame.origin.x = max(visible.minX, visible.maxX - frame.size.width)
+                }
+                if frame.minX < visible.minX {
+                    frame.origin.x = visible.minX
+                }
+            }
+            window.setFrame(frame, display: true, animate: true)
+        }
+
         private var suppressScrollTracking = false
 
         func scrollToHeading(_ slug: String) {

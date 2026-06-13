@@ -13,7 +13,7 @@ struct ContentView: View {
                     text: $document.text,
                     navigationState: navigationState
                 )
-                .frame(minWidth: 250)
+                .frame(minWidth: 250, idealWidth: 600, maxWidth: .infinity)
             }
 
             MarkdownWebView(
@@ -21,7 +21,7 @@ struct ContentView: View {
                 fileURL: fileURL,
                 navigationState: navigationState
             )
-            .frame(minWidth: 320)
+            .frame(minWidth: 320, idealWidth: 600, maxWidth: .infinity)
             .id("preview")
         }
         .inspector(isPresented: $showInspector) {
@@ -29,6 +29,9 @@ struct ContentView: View {
                 .inspectorColumnWidth(min: 150, ideal: 220, max: 400)
         }
         .focusedSceneValue(\.navigationState, navigationState)
+        .onChange(of: navigationState.isEditing) { _, editing in
+            navigationState.coordinator?.adjustWindow(forEditing: editing)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
