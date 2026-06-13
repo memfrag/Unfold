@@ -15,11 +15,6 @@ struct MarkdownTextView: NSViewRepresentable {
 
     static let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
-    static func highlight(_ textView: NSTextView) {
-        guard let storage = textView.textStorage else { return }
-        MarkdownSyntaxHighlighter.apply(to: storage, baseFont: editorFont)
-    }
-
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         scrollView.hasHorizontalScroller = false
@@ -27,6 +22,9 @@ struct MarkdownTextView: NSViewRepresentable {
 
         let textView = scrollView.documentView as! NSTextView
         textView.delegate = context.coordinator
+        // The storage delegate highlights each edit (scoped to the edited range).
+        // Setting it before `string` below means the initial content is highlighted too.
+        textView.textStorage?.delegate = context.coordinator
 
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -43,7 +41,6 @@ struct MarkdownTextView: NSViewRepresentable {
         // horizontal scroller, which is what we want.
 
         textView.string = text
-        Self.highlight(textView)
         return scrollView
     }
 
@@ -57,10 +54,9 @@ struct MarkdownTextView: NSViewRepresentable {
         // so we skip this and avoid clearing the undo stack.
         if textView.string != text {
             let sel = textView.selectedRange()
-            textView.string = text
+            textView.string = text          // re-highlighted via the storage delegate
             let loc = min(sel.location, (text as NSString).length)
             textView.setSelectedRange(NSRange(location: loc, length: 0))
-            Self.highlight(textView)
         }
 
         textView.appearance = navigationState.appearanceMode.nsAppearance
@@ -80,16 +76,28 @@ struct MarkdownTextView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    class Coordinator: NSObject, NSTextViewDelegate {
+    class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: MarkdownTextView
         var hasFocused = false
 
         init(_ parent: MarkdownTextView) { self.parent = parent }
 
+        // Re-highlight only the edited region (expanded to enclosing paragraphs
+        // and any fenced block it touches) rather than the whole document. Runs
+        // for both user edits and programmatic `string` replacement.
+        func textStorage(_ textStorage: NSTextStorage,
+                         didProcessEditing editedMask: NSTextStorageEditActions,
+                         range editedRange: NSRange,
+                         changeInLength delta: Int) {
+            guard editedMask.contains(.editedCharacters) else { return }
+            let ns = textStorage.string as NSString
+            let range = MarkdownSyntaxHighlighter.rangeToRehighlight(forEdited: editedRange, in: ns)
+            MarkdownSyntaxHighlighter.apply(to: textStorage, baseFont: MarkdownTextView.editorFont, in: range)
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             parent.text = tv.string
-            MarkdownTextView.highlight(tv)
             syncCaret(tv)
         }
 
