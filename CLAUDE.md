@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Unfold is a read-only Markdown viewer for macOS (SwiftUI document app). It opens `.md` files, renders them to HTML via bundled JavaScript libraries, and displays the result in a `WKWebView`. The app never writes Markdown files — `UnfoldDocument` declares no `writableContentTypes` and its `fileWrapper` throws.
+Unfold is a Markdown viewer/editor for macOS (SwiftUI document app). It opens `.md` files, renders them to HTML via bundled JavaScript libraries, and displays the result in a `WKWebView`. By default it's a clean preview; an **Edit** toggle (Cmd+Shift+E / toolbar pencil) reveals a native source editor on the left in a split with the live preview on the right. Editing is **autosave in place** (standard SwiftUI document behavior) — `UnfoldDocument` is a writable `FileDocument`.
 
 ## Build & release
 
@@ -17,16 +17,16 @@ Unfold is a read-only Markdown viewer for macOS (SwiftUI document app). It opens
 
 The rendering pipeline is the core of the app and spans Swift ↔ JavaScript:
 
-1. **`UnfoldDocument`** loads the file's UTF-8 text (read-only `FileDocument`).
-2. **`HTMLTemplate.swift` / `buildHTML()`** produces a complete self-contained HTML page. The Markdown text is embedded into a JS template literal (escaped via `escapeForJSTemplateLiteral`), and `marked.min.js` + `highlight.min.js` + the two highlight CSS themes are inlined from `Unfold/Resources/`. Rendering, slug generation for headings, the copy-button, link-preview, scroll history, and TOC extraction all happen in the injected `<script>`.
-3. **`MarkdownWebView`** (`NSViewRepresentable`) hosts the `WKWebView` and owns the bridge.
+1. **`UnfoldDocument`** loads/saves the file's UTF-8 text (a writable `FileDocument`; `fileWrapper` writes the text verbatim).
+2. **`HTMLTemplate.swift` / `buildHTML()`** produces a self-contained HTML **shell** with an empty `#content`. `marked.min.js` + `highlight.min.js` + the two highlight CSS themes are inlined from `Unfold/Resources/`. The Markdown is **not** embedded in the page — instead the script defines `window._render(md)`, which parses the Markdown into `#content`, highlights code, wires copy buttons, extracts the TOC, tags each top-level block with a `data-line` source-line attribute, and preserves scroll. One-time setup (link/scroll/mousemove listeners, `_goBack`/`_goForward`/`_scrollToHeading`, `_syncToLine`, link-preview, scroll history) lives outside `_render`.
+3. **`MarkdownWebView`** (`NSViewRepresentable`) hosts the `WKWebView` and owns the bridge. The initial render is driven from `webView(_:didFinish:)`; live edits re-render in place (debounced ~1s) without reloading the page.
 
 ### The Swift ↔ JS bridge
 
 This is the part that requires reading multiple files together. Communication is bidirectional:
 
 - **JS → Swift** via three `WKScriptMessage` handlers registered in `makeNSView` and handled in `Coordinator.userContentController`: `navState` (back/forward availability), `tocData` (flat heading list), `activeHeading` (scroll-spy current heading).
-- **Swift → JS** via `evaluateJavaScript` calling globals the template defines: `window._goBack()`, `_goForward()`, `_scrollToHeading(slug)`.
+- **Swift → JS** via two mechanisms: `evaluateJavaScript` for the navigation globals (`window._goBack()`, `_goForward()`, `_scrollToHeading(slug)`), and `callAsyncJavaScript` for `window._render(md)` and `window._syncToLine(line)` — passing the Markdown/line as a real JS argument avoids all string-escaping concerns (there is no longer any `escapeForJSTemplateLiteral`).
 - Scroll history (back/forward navigation) lives entirely in JS as an array — it is *not* WebKit's native page history.
 - `suppressScrollTracking` guards against the scroll-spy fighting a programmatic `scrollToHeading`.
 
@@ -36,15 +36,21 @@ The page is **not** loaded from disk or via `loadHTMLString`. Instead `LocalReso
 - `unfold-resource://page` → the generated HTML (stashed in `pendingHTML`).
 - `unfold-resource://resource/<path>` → local image files, resolved relative to the document's directory.
 
-The template's `renderer.image` rewrites every non-`http(s)` image `src` to this scheme. This exists so relative-path images in sandboxed Markdown can be displayed.
+The template's `renderer.image` rewrites every non-`http(s)` image `src` to this scheme. This exists so relative-path images in the Markdown can be displayed.
 
 ### File access
 
 The app is **not** sandboxed (`Unfold.entitlements` only retains the Sparkle mach-lookup exceptions). It has full filesystem read access, so `LocalResourceSchemeHandler` resolves `unfold-resource://resource/<path>` image requests directly against the document's directory (`baseDirectory`) with no permission prompt or security-scoped bookmarks.
 
-### Live reload
+### Editing & live preview
 
-`FileWatcher` wraps a `DispatchSource` file-system-object source. On `.write` it reloads from disk; on `.delete`/`.rename` (atomic saves by editors) it cancels, re-opens the path after a short delay, and reloads. Reload re-reads the file and regenerates the whole HTML page.
+The editor is **`MarkdownTextView`** (`NSViewRepresentable` around `NSTextView`, not SwiftUI `TextEditor` — `TextEditor` force-applies smart quote/dash substitution that corrupts Markdown). It disables all substitutions, soft-wraps, follows the appearance toggle, and uses native undo. **`MarkdownSyntaxHighlighter`** styles the text storage with a regex pass (headings, emphasis, code, links, lists, quotes) using dynamic system colors.
+
+`ContentView` is an `HSplitView`; the editor is conditionally inserted while the `MarkdownWebView` is **always present with a stable `.id("preview")`** so toggling edit mode does not recreate the `WKWebView` (which would reset scroll). Entering edit mode widens the window (see `Coordinator.adjustWindow`, right-edge anchored, Core-Animation animated).
+
+Editor → preview **sync** is one-directional and caret-driven: on caret move/typing the editor computes the source line and calls `Coordinator.syncToLine`, which calls `window._syncToLine` to scroll the matching `data-line` block into view *only if off-screen*.
+
+There is no file watcher. External changes to the open file are adopted by the SwiftUI document architecture (a clean document reverts to the new contents). `Coordinator.reload` (Cmd+R) just re-renders the in-memory text — it never reads disk.
 
 ### TOC / headings
 
@@ -52,9 +58,9 @@ The app is **not** sandboxed (`Unfold.entitlements` only retains the Sparkle mac
 
 ### Commands & menus
 
-`UnfoldApp` wires menu commands. Export PDF (Cmd+E), Print (Cmd+P), back/forward (Cmd+[ / Cmd+]), reload (Cmd+R), appearance toggle, and TOC toggle are driven through `NavigationState.coordinator` (a `@FocusedValue`). PDF export forces light appearance temporarily for legible output. `CLIInstaller` offers a copyable `sudo cp` command to install the bundled `unfold` CLI shim (`Unfold/Resources/unfold`) into `/usr/local/bin`.
+`UnfoldApp` wires menu commands. Export PDF (Cmd+E), Print (Cmd+P), back/forward (Cmd+[ / Cmd+]), reload (Cmd+R), Show/Hide Editor (Cmd+Shift+E), appearance toggle, and TOC toggle are driven through `NavigationState` / its `coordinator` (a `@FocusedValue`). The shared `@Observable NavigationState` (notably `isEditing`) ties the menu/toolbar toggles, the split layout, and the coordinator together. File > New is suppressed (the app opens existing documents). PDF export forces light appearance temporarily for legible output. `CLIInstaller` offers a copyable `sudo cp` command to install the bundled `unfold` CLI shim (`Unfold/Resources/unfold`) into `/usr/local/bin`.
 
 ## Conventions
 
 - Vendored JS/CSS in `Unfold/Resources/` is minified third-party code — regenerate from upstream (marked, highlight.js) rather than hand-editing. Versions are tracked in `README.md` and the `AttributionsWindow` in `UnfoldApp.swift`; update both when bumping.
-- When changing rendering behavior, remember the markdown string is interpolated into a JS template literal — anything that breaks the literal (backticks, `${`) must go through `escapeForJSTemplateLiteral`.
+- The Markdown reaches the page only through `window._render(md)` via `callAsyncJavaScript` (a real JS argument), so there is no string escaping to worry about. If you change how blocks are emitted in `_render`, keep the `data-line` attribute on top-level blocks or editor→preview sync breaks.
