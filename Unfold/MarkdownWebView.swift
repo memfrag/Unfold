@@ -67,14 +67,7 @@ struct MarkdownWebView: NSViewRepresentable {
         if let fileURL {
             context.coordinator.startFileWatching(url: fileURL)
         }
-        if hasLocalImages(markdown), let fileURL {
-            let dir = fileURL.deletingLastPathComponent()
-            context.coordinator.requestDirectoryAccess(dir: dir) {
-                context.coordinator.loadHTML(markdown: markdown, in: webView)
-            }
-        } else {
-            context.coordinator.loadHTML(markdown: markdown, in: webView)
-        }
+        context.coordinator.loadHTML(markdown: markdown, in: webView)
         return webView
     }
 
@@ -93,42 +86,6 @@ struct MarkdownWebView: NSViewRepresentable {
         var schemeHandler: LocalResourceSchemeHandler?
         private var fileWatcher: FileWatcher?
         private var fileURL: URL?
-        private var grantedDirectoryURL: URL?
-
-        func requestDirectoryAccess(dir: URL, completion: @escaping () -> Void) {
-            // Check if we already have access
-            if FileManager.default.isReadableFile(atPath: dir.path) {
-                self.grantedDirectoryURL = dir
-                self.schemeHandler?.grantedDirectory = dir
-                completion()
-                return
-            }
-
-            // Try resolving a stored bookmark
-            if let bookmarkedURL = BookmarkStore.resolveBookmark(for: dir.path) {
-                self.grantedDirectoryURL = bookmarkedURL
-                self.schemeHandler?.grantedDirectory = bookmarkedURL
-                completion()
-                return
-            }
-
-            // Ask the user for access
-            let panel = NSOpenPanel()
-            panel.message = "Unfold needs access to this folder to display local images."
-            panel.prompt = "Grant Access"
-            panel.canChooseFiles = false
-            panel.canChooseDirectories = true
-            panel.allowsMultipleSelection = false
-            panel.directoryURL = dir
-            panel.begin { response in
-                if response == .OK, let url = panel.url {
-                    BookmarkStore.saveBookmark(for: url)
-                    self.grantedDirectoryURL = url
-                    self.schemeHandler?.grantedDirectory = url
-                }
-                completion()
-            }
-        }
 
         func userContentController(
             _ userContentController: WKUserContentController,
@@ -285,16 +242,9 @@ struct MarkdownWebView: NSViewRepresentable {
     }
 }
 
-private func hasLocalImages(_ markdown: String) -> Bool {
-    // Match ![...](...) where the URL is not http/https
-    let pattern = #"!\[.*?\]\((?!https?://)(.*?)\)"#
-    return markdown.range(of: pattern, options: .regularExpression) != nil
-}
-
 class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     let baseDirectory: URL?
     var pendingHTML: String?
-    var grantedDirectory: URL?
 
     init(baseDirectory: URL?) {
         self.baseDirectory = baseDirectory
@@ -325,8 +275,7 @@ class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         }
 
         // Serve local resource files
-        let resolveDir = grantedDirectory ?? baseDirectory
-        guard let resolveDir, url.host == "resource" else {
+        guard let resolveDir = baseDirectory, url.host == "resource" else {
             urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
             return
         }

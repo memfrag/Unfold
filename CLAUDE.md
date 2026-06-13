@@ -38,12 +38,9 @@ The page is **not** loaded from disk or via `loadHTMLString`. Instead `LocalReso
 
 The template's `renderer.image` rewrites every non-`http(s)` image `src` to this scheme. This exists so relative-path images in sandboxed Markdown can be displayed.
 
-### Sandboxing & file access (the tricky part)
+### File access
 
-The app is sandboxed (`Unfold.entitlements`: app-sandbox, user-selected read-write, app-scope bookmarks). A Markdown file the user opened is accessible, but **its sibling image files are not** without explicit grant. Flow:
-- `hasLocalImages()` regex-scans the Markdown; only if it finds local images does the app request directory access *before* first render.
-- `Coordinator.requestDirectoryAccess` checks readability, then a stored security-scoped bookmark (`BookmarkStore`), then falls back to an `NSOpenPanel` asking the user to grant the folder. Grants persist via `BookmarkStore` in `UserDefaults` so the panel isn't shown again.
-- The granted directory (`schemeHandler.grantedDirectory`) is what the scheme handler uses to resolve image paths.
+The app is **not** sandboxed (`Unfold.entitlements` only retains the Sparkle mach-lookup exceptions). It has full filesystem read access, so `LocalResourceSchemeHandler` resolves `unfold-resource://resource/<path>` image requests directly against the document's directory (`baseDirectory`) with no permission prompt or security-scoped bookmarks.
 
 ### Live reload
 
