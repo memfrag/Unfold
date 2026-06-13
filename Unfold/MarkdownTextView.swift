@@ -13,6 +13,13 @@ struct MarkdownTextView: NSViewRepresentable {
     @Binding var text: String
     let navigationState: NavigationState
 
+    static let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+    static func highlight(_ textView: NSTextView) {
+        guard let storage = textView.textStorage else { return }
+        MarkdownSyntaxHighlighter.apply(to: storage, baseFont: editorFont)
+    }
+
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         scrollView.hasHorizontalScroller = false
@@ -29,13 +36,14 @@ struct MarkdownTextView: NSViewRepresentable {
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.font = Self.editorFont
         textView.textContainerInset = NSSize(width: 8, height: 12)
 
         // `scrollableTextView()` already soft-wraps to the view width with no
         // horizontal scroller, which is what we want.
 
         textView.string = text
+        Self.highlight(textView)
         return scrollView
     }
 
@@ -52,6 +60,7 @@ struct MarkdownTextView: NSViewRepresentable {
             textView.string = text
             let loc = min(sel.location, (text as NSString).length)
             textView.setSelectedRange(NSRange(location: loc, length: 0))
+            Self.highlight(textView)
         }
 
         textView.appearance = navigationState.appearanceMode.nsAppearance
@@ -80,6 +89,7 @@ struct MarkdownTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             parent.text = tv.string
+            MarkdownTextView.highlight(tv)
             syncCaret(tv)
         }
 
