@@ -9,10 +9,36 @@
 /* Begin PBXBuildFile section */
 		417BC8EB2F85B28F0071C8F8 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 417BC8EA2F85B28F0071C8F8 /* Sparkle */; };
 		41885F1E2F85A296000CD880 /* AttributionsUI in Frameworks */ = {isa = PBXBuildFile; productRef = 41885F1D2F85A296000CD880 /* AttributionsUI */; };
+		41A0000A3000000A000CD880 /* UnfoldQuickLook.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 41A0000130000001000CD880 /* UnfoldQuickLook.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		41A0000B3000000B000CD880 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 41885F022F859FF5000CD880 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 41A0000530000005000CD880;
+			remoteInfo = UnfoldQuickLook;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		41A0000930000009000CD880 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				41A0000A3000000A000CD880 /* UnfoldQuickLook.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		41885F0A2F859FF5000CD880 /* Unfold.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Unfold.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		41A0000130000001000CD880 /* UnfoldQuickLook.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = UnfoldQuickLook.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -23,6 +49,24 @@
 			);
 			target = 41885F092F859FF5000CD880 /* Unfold */;
 		};
+		41A0000330000003000CD880 /* Exceptions for "UnfoldQuickLook" folder in "UnfoldQuickLook" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 41A0000530000005000CD880 /* UnfoldQuickLook */;
+		};
+		41A0000430000004000CD880 /* Exceptions for "Unfold" folder in "UnfoldQuickLook" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				HTMLTemplate.swift,
+				Resources/highlight.min.js,
+				Resources/marked.min.js,
+				"Resources/theme-dark.min.css",
+				Resources/theme.min.css,
+			);
+			target = 41A0000530000005000CD880 /* UnfoldQuickLook */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -30,8 +74,17 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				41885F162F859FF7000CD880 /* Exceptions for "Unfold" folder in "Unfold" target */,
+				41A0000430000004000CD880 /* Exceptions for "Unfold" folder in "UnfoldQuickLook" target */,
 			);
 			path = Unfold;
+			sourceTree = "<group>";
+		};
+		41A0000230000002000CD880 /* UnfoldQuickLook */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				41A0000330000003000CD880 /* Exceptions for "UnfoldQuickLook" folder in "UnfoldQuickLook" target */,
+			);
+			path = UnfoldQuickLook;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -46,6 +99,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		41A0000730000007000CD880 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -53,6 +113,7 @@
 			isa = PBXGroup;
 			children = (
 				41885F0C2F859FF5000CD880 /* Unfold */,
+				41A0000230000002000CD880 /* UnfoldQuickLook */,
 				41885F0B2F859FF5000CD880 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -61,6 +122,7 @@
 			isa = PBXGroup;
 			children = (
 				41885F0A2F859FF5000CD880 /* Unfold.app */,
+				41A0000130000001000CD880 /* UnfoldQuickLook.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -75,10 +137,12 @@
 				41885F062F859FF5000CD880 /* Sources */,
 				41885F072F859FF5000CD880 /* Frameworks */,
 				41885F082F859FF5000CD880 /* Resources */,
+				41A0000930000009000CD880 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				41A0000C3000000C000CD880 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				41885F0C2F859FF5000CD880 /* Unfold */,
@@ -92,6 +156,28 @@
 			productReference = 41885F0A2F859FF5000CD880 /* Unfold.app */;
 			productType = "com.apple.product-type.application";
 		};
+		41A0000530000005000CD880 /* UnfoldQuickLook */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 41A0000D3000000D000CD880 /* Build configuration list for PBXNativeTarget "UnfoldQuickLook" */;
+			buildPhases = (
+				41A0000630000006000CD880 /* Sources */,
+				41A0000730000007000CD880 /* Frameworks */,
+				41A0000830000008000CD880 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				41A0000230000002000CD880 /* UnfoldQuickLook */,
+			);
+			name = UnfoldQuickLook;
+			packageProductDependencies = (
+			);
+			productName = UnfoldQuickLook;
+			productReference = 41A0000130000001000CD880 /* UnfoldQuickLook.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -103,6 +189,9 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					41885F092F859FF5000CD880 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					41A0000530000005000CD880 = {
 						CreatedOnToolsVersion = 26.4;
 					};
 				};
@@ -126,12 +215,20 @@
 			projectRoot = "";
 			targets = (
 				41885F092F859FF5000CD880 /* Unfold */,
+				41A0000530000005000CD880 /* UnfoldQuickLook */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		41885F082F859FF5000CD880 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41A0000830000008000CD880 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -148,7 +245,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		41A0000630000006000CD880 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		41A0000C3000000C000CD880 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 41A0000530000005000CD880 /* UnfoldQuickLook */;
+			targetProxy = 41A0000B3000000B000CD880 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		41885F182F859FF7000CD880 /* Debug */ = {
@@ -363,6 +475,70 @@
 			};
 			name = Release;
 		};
+		41A0000E3000000E000CD880 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = UnfoldQuickLook/UnfoldQuickLook.entitlements;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1.4.0;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = UnfoldQuickLook/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Unfold Markdown Preview";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.apparata.Unfold.QuickLookPreview;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		41A0000F3000000F000CD880 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = UnfoldQuickLook/UnfoldQuickLook.entitlements;
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1.4.0;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = UnfoldQuickLook/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Unfold Markdown Preview";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.apparata.Unfold.QuickLookPreview;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -380,6 +556,15 @@
 			buildConfigurations = (
 				41885F182F859FF7000CD880 /* Debug */,
 				41885F192F859FF7000CD880 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		41A0000D3000000D000CD880 /* Build configuration list for PBXNativeTarget "UnfoldQuickLook" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				41A0000E3000000E000CD880 /* Debug */,
+				41A0000F3000000F000CD880 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
