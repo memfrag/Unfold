@@ -25,6 +25,45 @@ error() {
     exit 1
 }
 
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [--version X.Y.Z] [--title "Release title"]
+
+Options:
+  --version X.Y.Z    Version to release (skips the interactive version prompt)
+  --title TITLE      GitHub release title (skips the interactive title prompt;
+                     defaults to "$APP_NAME X.Y.Z" if empty)
+  -h, --help         Show this help
+
+With both options provided the script runs fully non-interactively.
+EOF
+    exit 0
+}
+
+# --- Arguments ---
+ARG_VERSION=""
+ARG_TITLE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --version)
+            [ $# -ge 2 ] || error "--version requires a value."
+            ARG_VERSION="$2"
+            shift 2
+            ;;
+        --title)
+            [ $# -ge 2 ] || error "--title requires a value."
+            ARG_TITLE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            error "Unknown argument: $1 (see --help)"
+            ;;
+    esac
+done
+
 # --- Clean and create build directory ---
 echo "==> Cleaning build directory..."
 rm -rf "$BUILD_DIR"
@@ -54,24 +93,29 @@ if [ -n "$LATEST_TAG" ]; then
 fi
 
 NEED_NEW_VERSION=false
-if [ -z "$LATEST_TAG" ]; then
+if [ -n "$LATEST_TAG" ] && [ "$CURRENT_VERSION" = "$LATEST_TAG" ]; then
+    NEED_NEW_VERSION=true
+    echo "    Current version matches latest release."
+fi
+
+if [ -n "$ARG_VERSION" ]; then
+    VERSION="$ARG_VERSION"
+    if [ -n "$LATEST_TAG" ] && [ "$VERSION" = "$LATEST_TAG" ]; then
+        error "Version $VERSION is already released (latest tag: $LATEST_TAG)."
+    fi
+    echo "    Using version from --version: $VERSION"
+elif [ -z "$LATEST_TAG" ]; then
     echo "    No existing releases found."
     read -rp "    Enter version to release [$CURRENT_VERSION]: " VERSION
     VERSION="${VERSION:-$CURRENT_VERSION}"
+elif [ "$NEED_NEW_VERSION" = true ]; then
+    read -rp "    Enter new version: " VERSION
+    if [ -z "$VERSION" ]; then
+        error "Version cannot be empty."
+    fi
 else
-    if [ "$CURRENT_VERSION" = "$LATEST_TAG" ]; then
-        NEED_NEW_VERSION=true
-        echo "    Current version matches latest release."
-    fi
-    if [ "$NEED_NEW_VERSION" = true ]; then
-        read -rp "    Enter new version: " VERSION
-        if [ -z "$VERSION" ]; then
-            error "Version cannot be empty."
-        fi
-    else
-        read -rp "    Enter version to release [$CURRENT_VERSION]: " VERSION
-        VERSION="${VERSION:-$CURRENT_VERSION}"
-    fi
+    read -rp "    Enter version to release [$CURRENT_VERSION]: " VERSION
+    VERSION="${VERSION:-$CURRENT_VERSION}"
 fi
 
 if [ "$VERSION" != "$CURRENT_VERSION" ]; then
@@ -169,8 +213,13 @@ echo "    Stapled."
 echo "==> Signing for Sparkle..."
 "$SPARKLE_TOOLS_DIR/bin/sign_update" "$DMG_PATH" || error "Sparkle signing failed."
 
-# --- Prompt for release title ---
-read -rp "==> Enter release title: " RELEASE_TITLE
+# --- Release title ---
+if [ -n "$ARG_TITLE" ]; then
+    RELEASE_TITLE="$ARG_TITLE"
+    echo "==> Using release title from --title: $RELEASE_TITLE"
+else
+    read -rp "==> Enter release title: " RELEASE_TITLE
+fi
 if [ -z "$RELEASE_TITLE" ]; then
     RELEASE_TITLE="$APP_NAME $VERSION"
 fi
