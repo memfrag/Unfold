@@ -76,7 +76,10 @@ private struct DragDivider: View {
                 if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
             }
             .gesture(
-                DragGesture()
+                // Global coordinate space is essential: the divider itself moves
+                // during the drag, so a local-space translation is measured from
+                // a moving origin — the divider lags the pointer and jitters.
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
                     .onChanged { value in
                         let start = dragStartHeight ?? editorHeight
                         if dragStartHeight == nil { dragStartHeight = start }
