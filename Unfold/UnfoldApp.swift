@@ -4,6 +4,7 @@ import Sparkle
 
 @main
 struct UnfoldApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @FocusedValue(\.navigationState) private var navigationState
     @Environment(\.openWindow) private var openWindow
 
