@@ -73,5 +73,11 @@ struct UnfoldApp: App {
             ("highlight.js", .bsd3Clause(year: "2006-2024", holder: "Ivan Sagalaev")),
             ("Sparkle", .mit(year: "2006-2017", holder: "Andy Matuschak et al."))
         )
+        // Auxiliary Window scenes can otherwise be picked by SwiftUI as the
+        // window to present at launch, and state restoration can resurrect
+        // them after an unclean exit. This window should only ever open via
+        // its menu item.
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
     }
 }
