@@ -50,7 +50,16 @@ The editor is **`MarkdownTextView`** (`NSViewRepresentable` around `NSTextView`,
 
 Editor → preview **sync** is one-directional and caret-driven: on caret move/typing the editor computes the source line and calls `Coordinator.syncToLine`, which calls `window._syncToLine` to scroll the matching `data-line` block into view *only if off-screen*.
 
-There is no file watcher. External changes to the open file are adopted by the SwiftUI document architecture (a clean document reverts to the new contents). `Coordinator.reload` (Cmd+R) just re-renders the in-memory text — it never reads disk.
+### Staying in step with the file on disk
+
+`FileWatcher` (a `DispatchSource` file-system source) watches the open file and adopts external edits. It re-opens the path on `.rename`/`.delete` rather than just reporting a change, because atomic saves — how most editors write — replace the inode and would otherwise leave the watcher deaf after the first external save. Events are coalesced behind a short debounce.
+
+Adoption **never clobbers unsaved local work**, but the two windows establish that differently:
+
+- **Folder browser:** `LooseFile` owns both the text and its watcher. It skips adoption while one of its own saves is pending; an explicit Reload flushes first, then re-reads.
+- **Single document:** `ContentView` owns the watcher. `DocumentGroup`'s autosave timing isn't observable, so it tracks `lastKnownDiskText` and treats any divergence from it as unsaved work — external changes are skipped until the document autosaves. For the same reason an explicit Reload on a dirty document re-renders rather than re-reading.
+
+Reload goes through `NavigationState.reload()`, not the coordinator directly: it calls the view-supplied `reloadFromDisk` closure and hands the resulting text to `Coordinator.render(markdown:)`. Passing the text explicitly matters — `updateNSView` hasn't run yet at that point, so rendering off `lastMarkdown` would show the stale copy. `Coordinator.reload()` (in-memory re-render only) remains the fallback when no closure is set.
 
 ### TOC / headings
 

@@ -5,6 +5,13 @@ struct ContentView: View {
     let fileURL: URL?
     @State private var navigationState = NavigationState()
     @State private var showInspector = false
+    @State private var watcher: FileWatcher?
+
+    /// The file's contents as of the last time we read them. Anything in
+    /// `document.text` that diverges from this is unsaved local work — the
+    /// document's autosave timing isn't observable, so that's the only signal
+    /// we have that an external change would clobber something.
+    @State private var lastKnownDiskText: String?
 
     var body: some View {
         HSplitView {
@@ -32,6 +39,8 @@ struct ContentView: View {
         .onChange(of: navigationState.isEditing) { _, editing in
             navigationState.coordinator?.adjustWindow(forEditing: editing)
         }
+        .onAppear(perform: startWatching)
+        .onChange(of: fileURL) { _, _ in startWatching() }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button {
@@ -63,7 +72,7 @@ struct ContentView: View {
 
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    navigationState.coordinator?.reload()
+                    navigationState.reload()
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -95,6 +104,45 @@ struct ContentView: View {
             }
             .sharedBackgroundVisibility(.hidden)
         }
+    }
+
+    // MARK: - Staying in step with the file on disk
+
+    private func startWatching() {
+        navigationState.reloadFromDisk = { reloadFromDisk() }
+        guard let fileURL else {
+            watcher = nil
+            return
+        }
+        lastKnownDiskText = document.text
+        watcher = FileWatcher(url: fileURL) { adoptExternalChanges() }
+    }
+
+    /// Adopt an external edit, unless the document has unsaved changes of its
+    /// own — those win, and the autosave that follows puts disk back in step.
+    private func adoptExternalChanges() {
+        guard let fileURL,
+              let disk = try? String(contentsOf: fileURL, encoding: .utf8) else { return }
+        defer { lastKnownDiskText = disk }
+        guard disk != document.text, document.text == lastKnownDiskText else { return }
+        document.text = disk
+        navigationState.coordinator?.render(markdown: disk)
+    }
+
+    /// Re-read the file for an explicit Reload, returning the text to render.
+    ///
+    /// Unlike the folder browser's `LooseFile`, there's no way to force the
+    /// document's autosave from here, so a dirty document keeps its own text
+    /// rather than risk discarding unsaved work — Reload then just re-renders.
+    private func reloadFromDisk() -> String {
+        guard let fileURL,
+              let disk = try? String(contentsOf: fileURL, encoding: .utf8),
+              document.text == lastKnownDiskText else { return document.text }
+        lastKnownDiskText = disk
+        if disk != document.text {
+            document.text = disk
+        }
+        return disk
     }
 }
 

@@ -69,7 +69,7 @@ struct FolderBrowserView: View {
 
         ToolbarItem(placement: .primaryAction) {
             Button {
-                navigationState.coordinator?.reload()
+                navigationState.reload()
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
@@ -119,9 +119,17 @@ struct FolderBrowserView: View {
 
         guard let url, isMarkdown(url) else {
             currentFile = nil
+            navigationState.reloadFromDisk = nil
             return
         }
-        currentFile = LooseFile(url: url)
+        let file = LooseFile(url: url)
+        currentFile = file
+        // Capture the file itself rather than reading `currentFile` later, so
+        // these can't outlive their selection and act on the wrong file.
+        navigationState.reloadFromDisk = { file.reloadFromDisk() }
+        file.onExternalChange = { [navigationState] text in
+            navigationState.coordinator?.render(markdown: text)
+        }
     }
 
     private func isMarkdown(_ url: URL) -> Bool {

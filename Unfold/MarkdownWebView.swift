@@ -39,6 +39,24 @@ class NavigationState {
     var activeHeadingSlug: String?
     var isEditing = false
     weak var coordinator: MarkdownWebView.Coordinator?
+
+    /// Set by whichever view owns the file (`ContentView` / `FolderBrowserView`)
+    /// so Reload can re-read from disk rather than merely re-rendering the text
+    /// already in memory. Returns the text to render.
+    var reloadFromDisk: (() -> String)?
+
+    /// Reload: pick up external edits, then render immediately.
+    ///
+    /// The fresh text is handed straight to the coordinator rather than left for
+    /// SwiftUI to propagate — `updateNSView` won't have run yet at this point, so
+    /// rendering off `lastMarkdown` here would show the stale copy.
+    func reload() {
+        if let text = reloadFromDisk?() {
+            coordinator?.render(markdown: text)
+        } else {
+            coordinator?.reload()
+        }
+    }
 }
 
 struct MarkdownWebView: NSViewRepresentable {
@@ -141,6 +159,14 @@ struct MarkdownWebView: NSViewRepresentable {
         func reload() {
             // Force a full preview re-render from the current in-memory text.
             // Never reads disk, so it's safe while editing.
+            renderNow()
+        }
+
+        /// Render `markdown` immediately, bypassing the debounce, and treat it as
+        /// the current text — so the `updateNSView` that follows sees no change
+        /// and doesn't render it a second time.
+        func render(markdown: String) {
+            lastMarkdown = markdown
             renderNow()
         }
 
