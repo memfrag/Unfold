@@ -1,12 +1,10 @@
 import SwiftUI
-import AttributionsUI
 import Sparkle
 
 @main
 struct UnfoldApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @FocusedValue(\.navigationState) private var navigationState
-    @Environment(\.openWindow) private var openWindow
 
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -37,12 +35,6 @@ struct UnfoldApp: App {
 
                 Divider()
 
-                Button("Attributions") {
-                    openWindow(id: AttributionsWindow.windowID)
-                }
-
-                Divider()
-
                 Button("Install Command Line Tool...") {
                     CLIInstaller.install()
                 }
@@ -66,18 +58,5 @@ struct UnfoldApp: App {
         Settings {
             SettingsView()
         }
-
-        AttributionsWindow(
-            "Unfold uses the following third-party software:",
-            ("marked", .mit(year: "2018+", holder: "MarkedJS, Christopher Jeffrey")),
-            ("highlight.js", .bsd3Clause(year: "2006-2024", holder: "Ivan Sagalaev")),
-            ("Sparkle", .mit(year: "2006-2017", holder: "Andy Matuschak et al."))
-        )
-        // Auxiliary Window scenes can otherwise be picked by SwiftUI as the
-        // window to present at launch, and state restoration can resurrect
-        // them after an unclean exit. This window should only ever open via
-        // its menu item.
-        .defaultLaunchBehavior(.suppressed)
-        .restorationBehavior(.disabled)
     }
 }

@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		417BC8EB2F85B28F0071C8F8 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 417BC8EA2F85B28F0071C8F8 /* Sparkle */; };
-		41885F1E2F85A296000CD880 /* AttributionsUI in Frameworks */ = {isa = PBXBuildFile; productRef = 41885F1D2F85A296000CD880 /* AttributionsUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,7 +40,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				41885F1E2F85A296000CD880 /* AttributionsUI in Frameworks */,
 				417BC8EB2F85B28F0071C8F8 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -85,7 +83,6 @@
 			);
 			name = Unfold;
 			packageProductDependencies = (
-				41885F1D2F85A296000CD880 /* AttributionsUI */,
 				417BC8EA2F85B28F0071C8F8 /* Sparkle */,
 			);
 			productName = Unfold;
@@ -117,7 +114,6 @@
 			mainGroup = 41885F012F859FF5000CD880;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				41885F1C2F85A296000CD880 /* XCRemoteSwiftPackageReference "AttributionsUI" */,
 				417BC8E92F85B28F0071C8F8 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -373,14 +369,6 @@
 				version = 2.9.1;
 			};
 		};
-		41885F1C2F85A296000CD880 /* XCRemoteSwiftPackageReference "AttributionsUI" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/apparata/AttributionsUI";
-			requirement = {
-				kind = exactVersion;
-				version = 1.1.1;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -388,11 +376,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 417BC8E92F85B28F0071C8F8 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
-		};
-		41885F1D2F85A296000CD880 /* AttributionsUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 41885F1C2F85A296000CD880 /* XCRemoteSwiftPackageReference "AttributionsUI" */;
-			productName = AttributionsUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

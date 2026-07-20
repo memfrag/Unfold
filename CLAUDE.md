@@ -11,7 +11,7 @@ Unfold is a Markdown viewer/editor for macOS (SwiftUI document app). It opens `.
 - **Build/run:** Open `Unfold.xcodeproj` in Xcode, Cmd+B / Cmd+R. There is no command-line test suite — this is a small SwiftUI app with no test target.
 - **Release:** `scripts/build-and-notarize.sh` is the full pipeline — bumps version (Info.plist + pbxproj), archives (arm64, hardened runtime), exports, builds a DMG, notarizes (`notarytool` keychain profile `notary`), staples, signs for Sparkle, creates a GitHub release on `memfrag/Unfold`, and regenerates `appcast.xml`. It downloads Sparkle tools on first run and is interactive (prompts for version and release title).
 - **Auto-update:** Sparkle reads `appcast.xml` (committed at repo root, served from GitHub). Bundle ID is `io.apparata.Unfold`.
-- **Dependencies** (SwiftPM, pinned exact versions): `Sparkle` 2.9.1, `apparata/AttributionsUI` 1.1.1.
+- **Dependencies** (SwiftPM, pinned exact versions): `Sparkle` 2.9.1.
 
 ## Architecture
 
@@ -69,11 +69,13 @@ Reload goes through `NavigationState.reload()`, not the coordinator directly: it
 
 `UnfoldApp` wires menu commands. Export PDF (Cmd+E), Print (Cmd+P), back/forward (Cmd+[ / Cmd+]), reload (Cmd+R), Show/Hide Editor (Cmd+Shift+E), appearance toggle, and TOC toggle are driven through `NavigationState` / its `coordinator` (a `@FocusedValue`). The shared `@Observable NavigationState` (notably `isEditing`) ties the menu/toolbar toggles, the split layout, and the coordinator together. File > New (Cmd+N) creates a blank untitled document. PDF export forces light appearance temporarily for legible output. `CLIInstaller` offers a copyable `sudo cp` command to install the bundled `unfold` CLI shim (`Unfold/Resources/unfold`) into `/usr/local/bin`.
 
+About is AppKit's **standard** About panel — there is no custom About window or scene. Third-party licenses live in `Unfold/Resources/Credits.html`, which the panel picks up automatically (it looks for `Credits.html`/`.rtf`/`.rtfd` in `Contents/Resources`) and shows in its scrollable credits area. Two constraints on that file: it must declare `<meta charset="utf-8">` or the `NSAttributedString` HTML importer decodes it as Latin-1 and mangles em dashes, and it must not set text colors or the credits go unreadable in dark mode.
+
 ### Preferences / theme
 
 A `Settings` scene (`SettingsView`) has a **Theme** tab of color wells for the editor's Markdown syntax-highlighting colors. `EditorTheme` (an `@Observable` singleton) stores per-element overrides in `UserDefaults` (hex), falling back to adaptive system-color defaults. `MarkdownSyntaxHighlighter` reads `EditorTheme.shared`; changing a color posts `.editorThemeChanged`, which the editor's coordinator observes to re-highlight.
 
 ## Conventions
 
-- Vendored JS/CSS in `Unfold/Resources/` is minified third-party code — regenerate from upstream (marked, highlight.js) rather than hand-editing. Versions are tracked in `README.md` and the `AttributionsWindow` in `UnfoldApp.swift`; update both when bumping.
+- Vendored JS/CSS in `Unfold/Resources/` is minified third-party code — regenerate from upstream (marked, highlight.js) rather than hand-editing. Versions are tracked in `README.md` and in `Unfold/Resources/Credits.html`; update both when bumping.
 - The Markdown reaches the page only through `window._render(md)` via `callAsyncJavaScript` (a real JS argument), so there is no string escaping to worry about. If you change how blocks are emitted in `_render`, keep the `data-line` attribute on top-level blocks or editor→preview sync breaks.
