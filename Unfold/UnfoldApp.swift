@@ -12,6 +12,23 @@ struct UnfoldApp: App {
         userDriverDelegate: nil
     )
 
+    /// "Show/Hide Editor" is a toggle only for the built-in editor; with an
+    /// external one configured the command launches it instead.
+    ///
+    /// Known wrinkle: changing the preference does not by itself re-evaluate this
+    /// menu title (holding `ExternalEditor.shared` in `@State` was tried and made
+    /// no difference), so the item can read "Show Editor" until the commands are
+    /// rebuilt — which the `@FocusedValue` below does on the next focus change.
+    /// Only the label lags; `edit()` reads the preference when invoked, so the
+    /// behaviour is always right. The toolbar buttons, being views, update
+    /// immediately.
+    private var editCommandTitle: String {
+        if ExternalEditor.shared.isEnabled {
+            return "Edit in \(ExternalEditor.shared.applicationName ?? "External Editor")"
+        }
+        return navigationState?.isEditing == true ? "Hide Editor" : "Show Editor"
+    }
+
     var body: some Scene {
         DocumentGroup(newDocument: UnfoldDocument()) { file in
             ContentView(document: file.$document, fileURL: file.fileURL)
@@ -27,11 +44,11 @@ struct UnfoldApp: App {
             }
 
             CommandGroup(after: .toolbar) {
-                Button(navigationState?.isEditing == true ? "Hide Editor" : "Show Editor") {
-                    navigationState?.isEditing.toggle()
+                Button(editCommandTitle) {
+                    navigationState?.edit()
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
-                .disabled(navigationState == nil)
+                .disabled(navigationState == nil || navigationState?.canEdit == false)
             }
 
             CommandGroup(after: .appInfo) {

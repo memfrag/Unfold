@@ -73,6 +73,12 @@ File > Open Folder... (Cmd+Shift+O) opens a folder-browser window through `AppDe
 
 About is AppKit's **standard** About panel — there is no custom About window or scene. Third-party licenses live in `Unfold/Resources/Credits.html`, which the panel picks up automatically (it looks for `Credits.html`/`.rtf`/`.rtfd` in `Contents/Resources`) and shows in its scrollable credits area. Two constraints on that file: it must declare `<meta charset="utf-8">` or the `NSAttributedString` HTML importer decodes it as Latin-1 and mangles em dashes, and it must not set text colors or the credits go unreadable in dark mode.
 
+### External editor
+
+`ExternalEditor` (an `@Observable` singleton, `UserDefaults`-backed like `EditorTheme`) decides whether Edit opens the built-in `MarkdownTextView` or hands the file to another app. It needs no syncing machinery of its own — `FileWatcher` and the adoption logic already pick up another program's writes and re-render.
+
+All three Edit affordances (both toolbar buttons, Cmd+Shift+E) route through `NavigationState.edit()`, which is where the branch lives. Two rules it encodes: in external mode it must **not** touch `isEditing` (that would trigger `adjustWindow(forEditing:)` and widen the window for an editor that never appears), and it flushes pending edits first, since the external app reads from disk. Flushing differs per owner — `LooseFile.flush()` in the folder browser, a direct atomic write in `ContentView` (going through `DocumentGroup` would race the launch, as its save is asynchronous). `NavigationState.fileURL` / `flushPendingEdits` are set by the file's owner, following the same closure idiom as `reloadFromDisk`.
+
 ### Preferences / theme
 
 A `Settings` scene (`SettingsView`) has a **Theme** tab of color wells for the editor's Markdown syntax-highlighting colors. `EditorTheme` (an `@Observable` singleton) stores per-element overrides in `UserDefaults` (hex), falling back to adaptive system-color defaults. `MarkdownSyntaxHighlighter` reads `EditorTheme.shared`; changing a color posts `.editorThemeChanged`, which the editor's coordinator observes to re-highlight.

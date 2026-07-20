@@ -54,16 +54,23 @@ struct FolderBrowserView: View {
 
     // MARK: - Toolbar
 
+    /// See `ContentView.editIcon` — in external mode Edit launches another app
+    /// rather than revealing a pane, so it isn't a toggle.
+    private var editIcon: String {
+        if ExternalEditor.shared.isEnabled { return "arrow.up.forward.app" }
+        return navigationState.isEditing ? "pencil.circle.fill" : "pencil"
+    }
+
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Button {
-                navigationState.isEditing.toggle()
+                navigationState.edit()
             } label: {
-                Image(systemName: navigationState.isEditing ? "pencil.circle.fill" : "pencil")
+                Image(systemName: editIcon)
             }
-            .help(navigationState.isEditing ? "Done Editing" : "Edit")
-            .disabled(currentFile == nil)
+            .help(navigationState.editLabel)
+            .disabled(currentFile == nil || !navigationState.canEdit)
         }
         .sharedBackgroundVisibility(.hidden)
 
@@ -120,13 +127,17 @@ struct FolderBrowserView: View {
         guard let url, isMarkdown(url) else {
             currentFile = nil
             navigationState.reloadFromDisk = nil
+            navigationState.flushPendingEdits = nil
+            navigationState.fileURL = nil
             return
         }
         let file = LooseFile(url: url)
         currentFile = file
+        navigationState.fileURL = url
         // Capture the file itself rather than reading `currentFile` later, so
         // these can't outlive their selection and act on the wrong file.
         navigationState.reloadFromDisk = { file.reloadFromDisk() }
+        navigationState.flushPendingEdits = { file.flush() }
         file.onExternalChange = { [navigationState] text in
             navigationState.coordinator?.render(markdown: text)
         }

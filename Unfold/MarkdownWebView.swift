@@ -45,6 +45,43 @@ class NavigationState {
     /// already in memory. Returns the text to render.
     var reloadFromDisk: (() -> String)?
 
+    /// The file being shown, set by its owner. An external editor is handed a
+    /// path, so there is nothing to open while this is nil (an unsaved File > New).
+    var fileURL: URL?
+
+    /// Set by the file's owner to write pending edits to disk immediately.
+    /// An external editor reads the file, so in-memory work has to land first.
+    var flushPendingEdits: (() -> Void)?
+
+    /// Edit is unavailable when an external editor is configured but the document
+    /// has never been saved — there is no path to hand over.
+    var canEdit: Bool {
+        !ExternalEditor.shared.isEnabled || fileURL != nil
+    }
+
+    /// The Edit action behind the toolbar button and Cmd+Shift+E.
+    ///
+    /// With an external editor configured this deliberately never touches
+    /// `isEditing`: that would widen the window (`adjustWindow(forEditing:)`) to
+    /// make room for a source editor that is never going to appear.
+    func edit() {
+        guard ExternalEditor.shared.isEnabled else {
+            isEditing.toggle()
+            return
+        }
+        guard let fileURL else { return }
+        flushPendingEdits?()
+        ExternalEditor.shared.open(fileURL)
+    }
+
+    /// Label for the Edit affordance, which stops being a toggle in external mode.
+    var editLabel: String {
+        if ExternalEditor.shared.isEnabled {
+            return "Edit in \(ExternalEditor.shared.applicationName ?? "External Editor")"
+        }
+        return isEditing ? "Done Editing" : "Edit"
+    }
+
     /// Reload: pick up external edits, then render immediately.
     ///
     /// The fresh text is handed straight to the coordinator rather than left for

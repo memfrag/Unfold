@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @Binding var document: UnfoldDocument
@@ -62,11 +63,12 @@ struct ContentView: View {
 
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    navigationState.isEditing.toggle()
+                    navigationState.edit()
                 } label: {
-                    Image(systemName: navigationState.isEditing ? "pencil.circle.fill" : "pencil")
+                    Image(systemName: editIcon)
                 }
-                .help(navigationState.isEditing ? "Done Editing" : "Edit")
+                .help(navigationState.editLabel)
+                .disabled(!navigationState.canEdit)
             }
             .sharedBackgroundVisibility(.hidden)
 
@@ -106,16 +108,47 @@ struct ContentView: View {
         }
     }
 
+    /// In external mode the button launches another app rather than revealing a
+    /// pane, so the toggle-state pencil would be misleading.
+    private var editIcon: String {
+        if ExternalEditor.shared.isEnabled { return "arrow.up.forward.app" }
+        return navigationState.isEditing ? "pencil.circle.fill" : "pencil"
+    }
+
     // MARK: - Staying in step with the file on disk
 
     private func startWatching() {
         navigationState.reloadFromDisk = { reloadFromDisk() }
+        navigationState.fileURL = fileURL
+        navigationState.flushPendingEdits = { flushPendingEdits() }
         guard let fileURL else {
             watcher = nil
             return
         }
         lastKnownDiskText = document.text
         watcher = FileWatcher(url: fileURL) { adoptExternalChanges() }
+    }
+
+    /// Write unsaved edits out before handing the file to an external editor.
+    ///
+    /// This writes directly rather than going through `DocumentGroup`, whose save
+    /// is asynchronous and would race the editor launch — the editor could open
+    /// the file before the save landed and show stale text. The bytes are the same
+    /// either way (`UnfoldDocument.fileWrapper` also writes `text` verbatim as
+    /// UTF-8), and updating `lastKnownDiskText` keeps the watcher from mistaking
+    /// our own write for an external change.
+    private func flushPendingEdits() {
+        guard let fileURL, document.text != lastKnownDiskText else { return }
+        do {
+            try Data(document.text.utf8).write(to: fileURL, options: .atomic)
+            lastKnownDiskText = document.text
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t save “\(fileURL.lastPathComponent)”"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
     }
 
     /// Adopt an external edit, unless the document has unsaved changes of its
