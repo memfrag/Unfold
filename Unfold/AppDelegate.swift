@@ -21,7 +21,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func openFolderWindow(_ url: URL) {
+    /// Backs the File ▸ Open Folder… command.
+    ///
+    /// This is a command of its own rather than folded into File ▸ Open because
+    /// `Open…` belongs to `DocumentGroup`: its panel offers only
+    /// `UnfoldDocument.readableContentTypes`, and SwiftUI publishes no command
+    /// placement for it (`.newItem` covers `New` alone — verified by dumping the
+    /// live File menu). Widening that panel would mean retargeting SwiftUI's own
+    /// `NSMenuItem`, which the menu rebuild driven by `isEditing` could undo.
+    ///
+    /// Adding `public.folder` to `readableContentTypes` is not an option either:
+    /// the chosen directory would be handed to `UnfoldDocument.init(configuration:)`,
+    /// where `regularFileContents` is nil for a directory, so the open fails.
+    func showOpenFolderPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Open"
+        panel.message = "Choose a folder to browse."
+
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            openFolderWindow(url.standardizedFileURL)
+        }
+    }
+
+    func openFolderWindow(_ url: URL) {
         if let existing = browserWindows[url] {
             existing.makeKeyAndOrderFront(nil)
             return

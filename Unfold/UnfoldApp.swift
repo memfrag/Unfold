@@ -19,6 +19,13 @@ struct UnfoldApp: App {
         }
         .defaultSize(width: 600, height: 700)
         .commands {
+            CommandGroup(after: .newItem) {
+                Button("Open Folder...") {
+                    appDelegate.showOpenFolderPanel()
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
+
             CommandGroup(after: .toolbar) {
                 Button(navigationState?.isEditing == true ? "Hide Editor" : "Show Editor") {
                     navigationState?.isEditing.toggle()
