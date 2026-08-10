@@ -11,6 +11,11 @@ import AppKit
 struct FolderBrowserView: View {
     let root: URL
 
+    /// Set when the folder was recognised as a Notion export (decided once, in
+    /// `AppDelegate.openFolderWindow`, which needs the answer for the window
+    /// title anyway). Purely a display concern — see `NotionExport`.
+    let hidesNotionIDs: Bool
+
     @State private var rootNodes: [FileNode] = []
     @State private var selectedURL: URL?
     @State private var currentFile: LooseFile?
@@ -21,12 +26,12 @@ struct FolderBrowserView: View {
         NavigationSplitView {
             List(selection: $selectedURL) {
                 OutlineGroup(rootNodes, id: \.id, children: \.children) { node in
-                    FileRow(node: node)
+                    FileRow(node: node, name: label(for: node))
                         .contextMenu { contextMenu(for: node) }
                         .tag(node.url)
                 }
             }
-            .navigationTitle(root.lastPathComponent)
+            .navigationTitle(rootTitle)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 360)
         } detail: {
             Group {
@@ -112,6 +117,20 @@ struct FolderBrowserView: View {
             .help(showTOC ? "Hide Table of Contents" : "Show Table of Contents")
         }
         .sharedBackgroundVisibility(.hidden)
+    }
+
+    // MARK: - Names
+
+    /// What a row is called on screen, which in a Notion export is not what the
+    /// file is called on disk.
+    private func label(for node: FileNode) -> String {
+        guard hidesNotionIDs else { return node.name }
+        return NotionExport.displayName(for: node.url, isDirectory: node.isDirectory)
+    }
+
+    private var rootTitle: String {
+        guard hidesNotionIDs else { return root.lastPathComponent }
+        return NotionExport.displayName(for: root, isDirectory: true)
     }
 
     // MARK: - Selection & loading
@@ -206,19 +225,26 @@ struct FolderBrowserView: View {
     }
 
     private func rename(_ node: FileNode) {
+        let currentName = label(for: node)
         let alert = NSAlert()
-        alert.messageText = "Rename “\(node.name)”"
+        alert.messageText = "Rename “\(currentName)”"
         alert.addButton(withTitle: "Rename")
         alert.addButton(withTitle: "Cancel")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-        field.stringValue = node.name
+        field.stringValue = currentName
         alert.accessoryView = field
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let newName = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !newName.isEmpty, newName != node.name else { return }
+        guard !newName.isEmpty, newName != currentName else { return }
 
+        // The reader was shown the name without its page ID and extension, so
+        // the rename has to put both back — losing the ID would break every
+        // link pointing at this page.
+        let filename = hidesNotionIDs
+            ? NotionExport.filename(for: node.url, isDirectory: node.isDirectory, renamedTo: newName)
+            : newName
         let dir = node.url.deletingLastPathComponent()
-        let dest = dir.appendingPathComponent(newName)
+        let dest = dir.appendingPathComponent(filename)
         do {
             try FileManager.default.moveItem(at: node.url, to: dest)
             let wasSelected = selectedURL == node.url
@@ -274,10 +300,11 @@ struct FolderBrowserView: View {
 /// A single row in the directory tree: an icon plus the file/folder name.
 private struct FileRow: View {
     let node: FileNode
+    let name: String
 
     var body: some View {
         Label {
-            Text(node.name).lineLimit(1)
+            Text(name).lineLimit(1)
         } icon: {
             Image(systemName: node.isDirectory ? "folder" : "doc.text")
                 .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)

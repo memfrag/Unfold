@@ -53,18 +53,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Decided here, once per window: the title needs the answer too, and the
+        // check reads directories, which shouldn't happen on every view update.
+        let hidesNotionIDs = NotionExport.looksLikeExport(url)
+
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1000, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        window.title = url.lastPathComponent
+        window.title = hidesNotionIDs
+            ? NotionExport.displayName(for: url, isDirectory: true)
+            : url.lastPathComponent
         window.titleVisibility = .visible
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 700, height: 480)
-        window.contentViewController = NSHostingController(rootView: FolderBrowserView(root: url))
+        window.contentViewController = NSHostingController(
+            rootView: FolderBrowserView(root: url, hidesNotionIDs: hidesNotionIDs)
+        )
         window.setFrameAutosaveName("FolderBrowser:\(url.path)")
         window.center()
         window.delegate = self
