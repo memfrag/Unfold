@@ -25,7 +25,7 @@ The rendering pipeline is the core of the app and spans Swift ↔ JavaScript:
 
 This is the part that requires reading multiple files together. Communication is bidirectional:
 
-- **JS → Swift** via three `WKScriptMessage` handlers registered in `makeNSView` and handled in `Coordinator.userContentController`: `navState` (back/forward availability), `tocData` (flat heading list), `activeHeading` (scroll-spy current heading).
+- **JS → Swift** via four `WKScriptMessage` handlers registered in `makeNSView` and handled in `Coordinator.userContentController`: `navState` (back/forward availability), `tocData` (flat heading list), `activeHeading` (scroll-spy current heading), `openLink` (a clicked link to a path on disk).
 - **Swift → JS** via two mechanisms: `evaluateJavaScript` for the navigation globals (`window._goBack()`, `_goForward()`, `_scrollToHeading(slug)`), and `callAsyncJavaScript` for `window._render(md)` and `window._syncToLine(line)` — passing the Markdown/line as a real JS argument avoids all string-escaping concerns (there is no longer any `escapeForJSTemplateLiteral`).
 - Scroll history (back/forward navigation) lives entirely in JS as an array — it is *not* WebKit's native page history.
 - `suppressScrollTracking` guards against the scroll-spy fighting a programmatic `scrollToHeading`.
@@ -37,6 +37,10 @@ The page is **not** loaded from disk or via `loadHTMLString`. Instead `LocalReso
 - `unfold-resource://resource/<path>` → local image files, resolved relative to the document's directory.
 
 The template's `renderer.image` rewrites every non-`http(s)` image `src` to this scheme. This exists so relative-path images in the Markdown can be displayed.
+
+### Links to other files
+
+Anchor hrefs are *not* rewritten — a link with no scheme is intercepted in the page's click handler, which `preventDefault`s and posts the **raw** `href` attribute over `openLink`. Raw matters: `a.href` has already been resolved against `unfold-resource://page` and normalised, which swallows any `../`. `Coordinator.openLocalLink` strips `#fragment`/`?query`, percent-decodes, and resolves the rest against the document's directory; Markdown goes to `NavigationState.openFile` (the folder browser selects it in the sidebar; unset, or a target outside the browsed root, means a new document window via `NavigationState.openInNewWindow`), anything else to `NSWorkspace`, and a missing path just beeps. `decidePolicyFor` cancels any `unfold-resource:` *link activation* that escapes the JS handler and routes it the same way — letting it navigate would silently re-serve the shell, which looks exactly like a dead link.
 
 ### File access
 

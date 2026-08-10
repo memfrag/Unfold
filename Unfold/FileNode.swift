@@ -92,7 +92,9 @@ final class FileNode: Identifiable {
         return isMarkdown(url)
     }
 
-    private static func isMarkdown(_ url: URL) -> Bool {
+    /// The one place that decides what counts as a Markdown file — the tree
+    /// filter, the folder browser's selection, and link-following all share it.
+    static func isMarkdown(_ url: URL) -> Bool {
         markdownExtensions.contains(url.pathExtension.lowercased())
     }
 

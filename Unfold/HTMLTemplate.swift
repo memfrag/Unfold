@@ -495,9 +495,10 @@ func buildHTML() -> String {
                 window.location.href = a.href;
                 return;
             }
-            var hash = a.getAttribute('href');
-            if (hash && hash.charAt(0) === '#') {
-                var target = document.getElementById(hash.substring(1));
+            var href = a.getAttribute('href');
+            if (!href) return;
+            if (href.charAt(0) === '#') {
+                var target = document.getElementById(href.substring(1));
                 if (target) {
                     e.preventDefault();
                     scrollHistory.splice(scrollHistoryIndex + 1);
@@ -510,6 +511,17 @@ func buildHTML() -> String {
                         scrollHistoryIndex++;
                         postNavState();
                     }, 500);
+                }
+                return;
+            }
+            // No scheme means a path on disk, relative to the document's folder
+            // (e.g. a Notion export's links between pages). The raw attribute is
+            // sent rather than a.href, which the browser has already resolved
+            // against unfold-resource://page and normalised — losing any '..'.
+            if (!/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+                e.preventDefault();
+                if (window.webkit && window.webkit.messageHandlers.openLink) {
+                    window.webkit.messageHandlers.openLink.postMessage(href);
                 }
             }
         });

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import WebKit
 import UniformTypeIdentifiers
 
@@ -53,6 +54,19 @@ class NavigationState {
     /// An external editor reads the file, so in-memory work has to land first.
     var flushPendingEdits: (() -> Void)?
 
+    /// Set by the file's owner to follow a Markdown link to another file in the
+    /// same folder. The folder browser shows it in place (selecting it in the
+    /// sidebar); left unset, the link opens in a new document window.
+    var openFile: ((URL) -> Void)?
+
+    /// Open a Markdown file in a document window of its own — the fallback when
+    /// the current window can't show it itself.
+    static func openInNewWindow(_ url: URL) {
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+            if error != nil { NSWorkspace.shared.open(url) }
+        }
+    }
+
     /// Edit is unavailable when an external editor is configured but the document
     /// has never been saved — there is no path to hand over.
     var canEdit: Bool {
@@ -106,6 +120,7 @@ struct MarkdownWebView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "navState")
         config.userContentController.add(context.coordinator, name: "tocData")
         config.userContentController.add(context.coordinator, name: "activeHeading")
+        config.userContentController.add(context.coordinator, name: "openLink")
         let baseDir = fileURL?.deletingLastPathComponent()
         let schemeHandler = LocalResourceSchemeHandler(baseDirectory: baseDir)
         config.setURLSchemeHandler(schemeHandler, forURLScheme: "unfold-resource")
@@ -180,8 +195,48 @@ struct MarkdownWebView: NSViewRepresentable {
                       let slug = message.body as? String else { return }
                 navigationState?.activeHeadingSlug = slug
 
+            case "openLink":
+                guard let href = message.body as? String else { return }
+                openLocalLink(href)
+
             default:
                 break
+            }
+        }
+
+        /// Follow a link to a path on disk, resolved against the document's own
+        /// folder. Markdown is opened by the app (in place where the owner
+        /// supplied `openFile`, otherwise in a new window); anything else is
+        /// handed to the system, which picks the right application for it.
+        func openLocalLink(_ href: String) {
+            guard let baseDirectory = fileURL?.deletingLastPathComponent() else { return }
+
+            // A #fragment or ?query is no part of the path on disk.
+            var path = href
+            if let cut = path.firstIndex(where: { $0 == "#" || $0 == "?" }) {
+                path = String(path[..<cut])
+            }
+            let decoded = path.removingPercentEncoding ?? path
+            guard !decoded.isEmpty else { return }
+
+            let target = (decoded.hasPrefix("/")
+                ? URL(fileURLWithPath: decoded)
+                : baseDirectory.appendingPathComponent(decoded)).standardizedFileURL
+
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory) else {
+                NSSound.beep()
+                return
+            }
+
+            if !isDirectory.boolValue, FileNode.isMarkdown(target) {
+                if let openFile = navigationState?.openFile {
+                    openFile(target)
+                } else {
+                    NavigationState.openInNewWindow(target)
+                }
+            } else {
+                NSWorkspace.shared.open(target)
             }
         }
 
@@ -372,10 +427,21 @@ struct MarkdownWebView: NSViewRepresentable {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            if let url = navigationAction.request.url,
-               let scheme = url.scheme,
-               scheme == "http" || scheme == "https" {
+            guard let url = navigationAction.request.url, let scheme = url.scheme else {
+                decisionHandler(.allow)
+                return
+            }
+            if scheme == "http" || scheme == "https" {
                 NSWorkspace.shared.open(url)
+                decisionHandler(.cancel)
+            } else if scheme == "unfold-resource", navigationAction.navigationType == .linkActivated {
+                // A relative link the page's click handler didn't intercept.
+                // Its href was resolved against unfold-resource://page, so the
+                // path is really relative to the document's folder — following
+                // it as a navigation would just re-serve the shell.
+                let encodedPath = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .percentEncodedPath ?? url.path
+                openLocalLink(String(encodedPath.drop(while: { $0 == "/" })))
                 decisionHandler(.cancel)
             } else {
                 decisionHandler(.allow)

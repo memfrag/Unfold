@@ -113,6 +113,16 @@ struct FolderBrowserView: View {
     // MARK: - Selection & loading
 
     private func loadTree() {
+        // Links between files in the tree are followed in place, by selecting
+        // the target — a link that points outside the folder has no row to
+        // select, so it gets a window of its own.
+        navigationState.openFile = { url in
+            if url.path.hasPrefix(root.standardizedFileURL.path + "/") {
+                selectedURL = url
+            } else {
+                NavigationState.openInNewWindow(url)
+            }
+        }
         rootNodes = FileNode.topLevelNodes(of: root)
         // Auto-open the first Markdown file, preferring top-level files.
         if selectedURL == nil {
@@ -124,7 +134,7 @@ struct FolderBrowserView: View {
         // Flush any pending save on the file we're leaving.
         currentFile?.flush()
 
-        guard let url, isMarkdown(url) else {
+        guard let url, FileNode.isMarkdown(url) else {
             currentFile = nil
             navigationState.reloadFromDisk = nil
             navigationState.flushPendingEdits = nil
@@ -141,10 +151,6 @@ struct FolderBrowserView: View {
         file.onExternalChange = { [navigationState] text in
             navigationState.coordinator?.render(markdown: text)
         }
-    }
-
-    private func isMarkdown(_ url: URL) -> Bool {
-        ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased())
     }
 
     // MARK: - File operations
