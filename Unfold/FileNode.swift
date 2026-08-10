@@ -82,14 +82,46 @@ final class FileNode: Identifiable {
         }
     }
 
-    /// Directories with well-known build/VCS noise names are hidden. Files are
-    /// only shown if they are Markdown. (Dotfiles are already excluded by
-    /// `.skipsHiddenFiles` at the enumeration step.)
+    /// Directories with well-known build/VCS noise names are hidden, as are
+    /// directories with no Markdown anywhere beneath them — a folder holding
+    /// nothing but a page's images (what a Notion export is largely made of) is
+    /// an empty row in a Markdown browser. Files are only shown if they are
+    /// Markdown. (Dotfiles are already excluded by `.skipsHiddenFiles` at the
+    /// enumeration step.)
     private static func shouldShow(_ url: URL, isDirectory: Bool) -> Bool {
         if isDirectory {
-            return !noiseDirectories.contains(url.lastPathComponent)
+            return !noiseDirectories.contains(url.lastPathComponent) && containsMarkdown(url)
         }
         return isMarkdown(url)
+    }
+
+    /// Whether any Markdown file lives in this directory or below it.
+    ///
+    /// Every file at a level is checked before descending, so the common case —
+    /// a folder with its own pages in it — costs a single directory read.
+    /// Symlinks are skipped rather than followed: one pointing at an ancestor
+    /// would otherwise recurse forever.
+    private static func containsMarkdown(_ directory: URL) -> Bool {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+
+        var subdirectories: [URL] = []
+        for entry in entries {
+            let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            if values?.isSymbolicLink == true { continue }
+            if values?.isDirectory == true {
+                if !noiseDirectories.contains(entry.lastPathComponent) {
+                    subdirectories.append(entry)
+                }
+            } else if isMarkdown(entry) {
+                return true
+            }
+        }
+        return subdirectories.contains(where: containsMarkdown)
     }
 
     /// The one place that decides what counts as a Markdown file — the tree
