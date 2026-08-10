@@ -25,10 +25,20 @@ The rendering pipeline is the core of the app and spans Swift ↔ JavaScript:
 
 This is the part that requires reading multiple files together. Communication is bidirectional:
 
-- **JS → Swift** via four `WKScriptMessage` handlers registered in `makeNSView` and handled in `Coordinator.userContentController`: `navState` (back/forward availability), `tocData` (flat heading list), `activeHeading` (scroll-spy current heading), `openLink` (a clicked link to a path on disk).
-- **Swift → JS** via two mechanisms: `evaluateJavaScript` for the navigation globals (`window._goBack()`, `_goForward()`, `_scrollToHeading(slug)`), and `callAsyncJavaScript` for `window._render(md)` and `window._syncToLine(line)` — passing the Markdown/line as a real JS argument avoids all string-escaping concerns (there is no longer any `escapeForJSTemplateLiteral`).
-- Scroll history (back/forward navigation) lives entirely in JS as an array — it is *not* WebKit's native page history.
+- **JS → Swift** via four `WKScriptMessage` handlers registered in `makeNSView` and handled in `Coordinator.userContentController`: `tocData` (flat heading list), `scrollState` (scroll offset + scroll-spy current heading), `historyPush` (the page jumped to an anchor), `openLink` (a clicked link to a path on disk).
+- **Swift → JS** via two mechanisms: `evaluateJavaScript` for `window._scrollToHeading(slug)` and `window.scrollTo`, and `callAsyncJavaScript` for `window._render(md)` and `window._syncToLine(line)` — passing the Markdown/line as a real JS argument avoids all string-escaping concerns (there is no longer any `escapeForJSTemplateLiteral`).
 - `suppressScrollTracking` guards against the scroll-spy fighting a programmatic `scrollToHeading`.
+
+### Navigation history
+
+Back/forward is **not** WebKit's page history — the page never navigates. It is a stack of `(file, scrollY)` entries in `NavigationState`, one per window, because the file identity exists only on the Swift side. Both kinds of destination live in it: another file, and a jump to an anchor within one.
+
+Three things make it work:
+- The page reports its scroll offset as it scrolls (`scrollState`); Swift stamps that into the entry it is *leaving*, so Back returns to where the reader was rather than the top. An entry's own offset is therefore filled in late — after the smooth scroll has settled.
+- A history move sets the index **first**, then asks the owner to select that file. The selection round-trips through SwiftUI and lands back in `navigated(to:)`, which ignores an arrival at the file it is already on — that is what stops a move from recording itself, and is why there is no "am I restoring?" flag (one would be read after it had been cleared).
+- A cross-file restore parks its offset in `pendingScroll`, **keyed by URL**, applied by the incoming file's coordinator after its first render. Keyed because the folder browser's `.id(file.url)` replaces the whole `WKWebView`: an unkeyed value could be swallowed by the outgoing one on its way out.
+
+The single-document window seeds one entry (`ContentView.startWatching`) and only ever adds in-page jumps to it — a link elsewhere opens a window of its own.
 
 ### Custom URL scheme: `unfold-resource://`
 
@@ -65,13 +75,17 @@ Adoption **never clobbers unsaved local work**, but the two windows establish th
 
 Reload goes through `NavigationState.reload()`, not the coordinator directly: it calls the view-supplied `reloadFromDisk` closure and hands the resulting text to `Coordinator.render(markdown:)`. Passing the text explicitly matters — `updateNSView` hasn't run yet at that point, so rendering off `lastMarkdown` would show the stale copy. `Coordinator.reload()` (in-memory re-render only) remains the fallback when no closure is set.
 
+### Folder browser sidebar
+
+`FileNode` loads children lazily and shows only Markdown files and directories with Markdown *somewhere beneath them* (`containsMarkdown`, which checks each level's files before descending and skips symlinks so an ancestor link can't recurse forever). A Notion export is mostly per-page image folders; without that test the tree is dominated by rows that open nothing. The cost is that a genuinely empty directory has no row at all.
+
 ### TOC / headings
 
 `HeadingItem.swift` turns the flat heading list (sent from JS) into a nested tree (`buildHeadingTree`) for the inspector sidebar in `ContentView`. `preserveExpansionState` keeps disclosure-group open/closed state across reloads. Heading slugs must match between Swift and JS — both derive them from heading text, but the authoritative slugs are generated in JS (`renderer.heading`) and sent over, so the sidebar links resolve correctly even with duplicate headings.
 
 ### Commands & menus
 
-`UnfoldApp` wires menu commands. Export PDF (Cmd+E), Print (Cmd+P), back/forward (Cmd+[ / Cmd+]), reload (Cmd+R), Show/Hide Editor (Cmd+Shift+E), appearance toggle, and TOC toggle are driven through `NavigationState` / its `coordinator` (a `@FocusedValue`). The shared `@Observable NavigationState` (notably `isEditing`) ties the menu/toolbar toggles, the split layout, and the coordinator together. File > New (Cmd+N) creates a blank untitled document. PDF export forces light appearance temporarily for legible output. `CLIInstaller` offers a copyable `sudo cp` command to install the bundled `unfold` CLI shim (`Unfold/Resources/unfold`) into `/usr/local/bin`.
+`UnfoldApp` wires menu commands. Export PDF (Cmd+E), Print (Cmd+P), reload (Cmd+R), Show/Hide Editor (Cmd+Shift+E), appearance toggle, and TOC toggle are driven through `NavigationState` / its `coordinator` (a `@FocusedValue`). Back/forward (Cmd+[ / Cmd+]) are a **Go** menu rather than shortcuts on the toolbar buttons (`BackForwardButtons`, shared by both windows) — on the buttons they only fired in whichever window declared them, so the folder browser never got them. The shared `@Observable NavigationState` (notably `isEditing`) ties the menu/toolbar toggles, the split layout, and the coordinator together. File > New (Cmd+N) creates a blank untitled document. PDF export forces light appearance temporarily for legible output. `CLIInstaller` offers a copyable `sudo cp` command to install the bundled `unfold` CLI shim (`Unfold/Resources/unfold`) into `/usr/local/bin`.
 
 File > Open Folder... (Cmd+Shift+O) opens a folder-browser window through `AppDelegate.showOpenFolderPanel()`. It is deliberately *not* folded into File > Open: that item belongs to `DocumentGroup`, its panel offers only `UnfoldDocument.readableContentTypes`, and SwiftUI publishes no command placement for it — `.newItem` covers `New` alone (verified by dumping the live `NSApp.mainMenu`). Two things that look like fixes and are not: adding `public.folder` to `readableContentTypes` makes the panel accept a directory but then feeds it to `UnfoldDocument.init(configuration:)`, which fails because `regularFileContents` is nil for a directory; and installing an `NSDocumentController` subclass to intercept directories **crashes on launch** — SwiftUI builds its own `PlatformDocumentController` in `applicationWillFinishLaunching` and segfaults if something else already claimed `NSDocumentController.shared`.
 

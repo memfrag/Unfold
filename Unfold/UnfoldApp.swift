@@ -43,6 +43,20 @@ struct UnfoldApp: App {
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
 
+            CommandMenu("Go") {
+                Button("Back") {
+                    navigationState?.goBack()
+                }
+                .keyboardShortcut("[", modifiers: .command)
+                .disabled(navigationState?.canGoBack != true)
+
+                Button("Forward") {
+                    navigationState?.goForward()
+                }
+                .keyboardShortcut("]", modifiers: .command)
+                .disabled(navigationState?.canGoForward != true)
+            }
+
             CommandGroup(after: .toolbar) {
                 Button(editCommandTitle) {
                     navigationState?.edit()

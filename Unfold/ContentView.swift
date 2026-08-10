@@ -44,21 +44,7 @@ struct ContentView: View {
         .onChange(of: fileURL) { _, _ in startWatching() }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                Button {
-                    navigationState.coordinator?.goBack()
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .disabled(!navigationState.canGoBack)
-                .keyboardShortcut("[", modifiers: .command)
-
-                Button {
-                    navigationState.coordinator?.goForward()
-                } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .disabled(!navigationState.canGoForward)
-                .keyboardShortcut("]", modifiers: .command)
+                BackForwardButtons(navigationState: navigationState)
             }
 
             ToolbarItem(placement: .primaryAction) {
@@ -121,6 +107,10 @@ struct ContentView: View {
         navigationState.reloadFromDisk = { reloadFromDisk() }
         navigationState.fileURL = fileURL
         navigationState.flushPendingEdits = { flushPendingEdits() }
+        // Seed the history with the document itself. This window shows one file
+        // for its lifetime (a link elsewhere opens a window of its own), so every
+        // later entry is an in-page jump within it.
+        navigationState.navigated(to: fileURL)
         guard let fileURL else {
             watcher = nil
             return
@@ -176,6 +166,30 @@ struct ContentView: View {
             document.text = disk
         }
         return disk
+    }
+}
+
+/// The back/forward pair, shared by both windows. The keyboard shortcuts live on
+/// the Go menu rather than here, so they work whichever window is key.
+struct BackForwardButtons: View {
+    let navigationState: NavigationState
+
+    var body: some View {
+        Button {
+            navigationState.goBack()
+        } label: {
+            Image(systemName: "chevron.left")
+        }
+        .help("Back")
+        .disabled(!navigationState.canGoBack)
+
+        Button {
+            navigationState.goForward()
+        } label: {
+            Image(systemName: "chevron.right")
+        }
+        .help("Forward")
+        .disabled(!navigationState.canGoForward)
     }
 }
 

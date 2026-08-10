@@ -33,8 +33,6 @@ enum AppearanceMode: CaseIterable {
 
 @Observable
 class NavigationState {
-    var canGoBack = false
-    var canGoForward = false
     var appearanceMode: AppearanceMode = .system
     var headings: [HeadingItem] = []
     var activeHeadingSlug: String?
@@ -108,6 +106,89 @@ class NavigationState {
             coordinator?.reload()
         }
     }
+
+    // MARK: - Navigation history
+
+    /// One place the reader has been: a file and how far down it they were.
+    ///
+    /// A jump to a heading is an entry of its own, as it is in a browser — only
+    /// the scroll offset distinguishes it from its neighbours. `url` is optional
+    /// because an unsaved File > New document has no path; such a window simply
+    /// has a single file's worth of history.
+    private struct HistoryEntry {
+        let url: URL?
+        var scrollY: Double
+    }
+
+    private var history: [HistoryEntry] = []
+    private var historyIndex = -1
+
+    /// Where the page is scrolled to right now, reported by the page as it
+    /// scrolls. It is stamped into the current entry whenever we leave it, so
+    /// going back lands where the reader left off rather than at the top.
+    var currentScrollY: Double = 0
+
+    /// A scroll position waiting for its file to finish rendering, consumed by
+    /// that file's coordinator. Keyed by URL because a history move replaces the
+    /// whole web view: the outgoing one must not swallow the incoming one's
+    /// restore on its way out.
+    var pendingScroll: (url: URL, scrollY: Double)?
+
+    var canGoBack: Bool { historyIndex > 0 }
+    var canGoForward: Bool { historyIndex >= 0 && historyIndex < history.count - 1 }
+
+    /// Record arriving at a file — a sidebar selection, a followed link, or the
+    /// first file the window shows. Anything ahead is dropped, exactly as a
+    /// browser discards the forward stack when you follow a new link.
+    ///
+    /// Arriving at the file we are already on is not a navigation, which is also
+    /// what makes a history move self-cancelling: `go(to:)` moves the index
+    /// first and only then asks the owner to select that file, so the selection
+    /// it triggers lands here and matches.
+    func navigated(to url: URL?) {
+        if historyIndex >= 0, history[historyIndex].url == url { return }
+        stampScroll()
+        history.removeSubrange((historyIndex + 1)...)
+        history.append(HistoryEntry(url: url, scrollY: 0))
+        historyIndex = history.count - 1
+        currentScrollY = 0
+    }
+
+    /// Record an in-page jump (a TOC entry, a `#heading` link). The entry we are
+    /// leaving keeps the position it was at before the jump; the new entry's own
+    /// position is stamped later, when it is left in turn — by then the smooth
+    /// scroll has settled and the page has reported where it ended up.
+    func navigatedInPage() {
+        guard historyIndex >= 0 else { return }
+        stampScroll()
+        history.removeSubrange((historyIndex + 1)...)
+        history.append(HistoryEntry(url: history[historyIndex].url, scrollY: 0))
+        historyIndex = history.count - 1
+    }
+
+    func goBack() { go(to: historyIndex - 1) }
+    func goForward() { go(to: historyIndex + 1) }
+
+    private func go(to index: Int) {
+        guard history.indices.contains(index), index != historyIndex else { return }
+        stampScroll()
+        let leaving = history[historyIndex]
+        historyIndex = index
+        let entry = history[index]
+        currentScrollY = entry.scrollY
+
+        guard entry.url != leaving.url, let url = entry.url else {
+            coordinator?.scroll(to: entry.scrollY)
+            return
+        }
+        pendingScroll = (url, entry.scrollY)
+        openFile?(url)
+    }
+
+    private func stampScroll() {
+        guard historyIndex >= 0 else { return }
+        history[historyIndex].scrollY = currentScrollY
+    }
 }
 
 struct MarkdownWebView: NSViewRepresentable {
@@ -117,9 +198,9 @@ struct MarkdownWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.userContentController.add(context.coordinator, name: "navState")
         config.userContentController.add(context.coordinator, name: "tocData")
-        config.userContentController.add(context.coordinator, name: "activeHeading")
+        config.userContentController.add(context.coordinator, name: "scrollState")
+        config.userContentController.add(context.coordinator, name: "historyPush")
         config.userContentController.add(context.coordinator, name: "openLink")
         let baseDir = fileURL?.deletingLastPathComponent()
         let schemeHandler = LocalResourceSchemeHandler(baseDirectory: baseDir)
@@ -171,11 +252,6 @@ struct MarkdownWebView: NSViewRepresentable {
             didReceive message: WKScriptMessage
         ) {
             switch message.name {
-            case "navState":
-                guard let dict = message.body as? [String: Bool] else { return }
-                navigationState?.canGoBack = dict["canGoBack"] ?? false
-                navigationState?.canGoForward = dict["canGoForward"] ?? false
-
             case "tocData":
                 guard let list = message.body as? [[String: Any]] else { return }
                 let flat = list.compactMap { entry -> (text: String, depth: Int, slug: String)? in
@@ -190,10 +266,17 @@ struct MarkdownWebView: NSViewRepresentable {
                 }
                 navigationState?.headings = newHeadings
 
-            case "activeHeading":
+            case "scrollState":
+                guard let dict = message.body as? [String: Any] else { return }
+                if let y = dict["y"] as? Double {
+                    navigationState?.currentScrollY = y
+                }
                 guard !suppressScrollTracking,
-                      let slug = message.body as? String else { return }
+                      let slug = dict["heading"] as? String else { return }
                 navigationState?.activeHeadingSlug = slug
+
+            case "historyPush":
+                navigationState?.navigatedInPage()
 
             case "openLink":
                 guard let href = message.body as? String else { return }
@@ -240,12 +323,11 @@ struct MarkdownWebView: NSViewRepresentable {
             }
         }
 
-        func goBack() {
-            webView?.evaluateJavaScript("window._goBack()", completionHandler: nil)
-        }
-
-        func goForward() {
-            webView?.evaluateJavaScript("window._goForward()", completionHandler: nil)
+        /// Jump straight to a scroll offset — a history restore, so no smooth
+        /// animation: the reader is going back to where they were, not being
+        /// taken somewhere new.
+        func scroll(to y: Double) {
+            webView?.evaluateJavaScript("window.scrollTo(0, \(y))", completionHandler: nil)
         }
 
         func reload() {
@@ -337,8 +419,16 @@ struct MarkdownWebView: NSViewRepresentable {
                 arguments: ["md": markdown],
                 in: nil,
                 in: .page,
-                completionHandler: nil
+                completionHandler: { [weak self] _ in self?.restorePendingScroll() }
             )
+        }
+
+        /// A history move sets the scroll position aside until the file it
+        /// belongs to has been rendered — there is nothing to scroll before that.
+        private func restorePendingScroll() {
+            guard let pending = navigationState?.pendingScroll, pending.url == fileURL else { return }
+            navigationState?.pendingScroll = nil
+            scroll(to: pending.scrollY)
         }
 
         /// Schedule a debounced in-place re-render (used while typing).

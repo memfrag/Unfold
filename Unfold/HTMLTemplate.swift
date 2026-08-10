@@ -446,45 +446,23 @@ func buildHTML() -> String {
 
         // ---- One-time setup (survives #content re-renders via event delegation) ----
 
-        var scrollHistory = [];
-        var scrollHistoryIndex = -1;
-
-        function postNavState() {
-            window.webkit.messageHandlers.navState.postMessage({
-                canGoBack: scrollHistoryIndex > 0,
-                canGoForward: scrollHistoryIndex < scrollHistory.length - 1
-            });
+        // Navigation history lives in Swift, which is the only side that knows
+        // which *file* is on screen. The page's part is to report where it is
+        // scrolled to and to say when it has jumped somewhere new.
+        function postJump() {
+            if (window.webkit && window.webkit.messageHandlers.historyPush) {
+                window.webkit.messageHandlers.historyPush.postMessage(null);
+            }
         }
 
-        window._goBack = function() {
-            if (scrollHistoryIndex > 0) {
-                scrollHistoryIndex--;
-                window.scrollTo(0, scrollHistory[scrollHistoryIndex]);
-                postNavState();
-            }
-        };
-        window._goForward = function() {
-            if (scrollHistoryIndex < scrollHistory.length - 1) {
-                scrollHistoryIndex++;
-                window.scrollTo(0, scrollHistory[scrollHistoryIndex]);
-                postNavState();
-            }
-        };
+        function jumpTo(target) {
+            postJump();
+            target.scrollIntoView({ behavior: 'smooth' });
+        }
 
         window._scrollToHeading = function(slug) {
             var target = document.getElementById(slug);
-            if (target) {
-                scrollHistory.splice(scrollHistoryIndex + 1);
-                scrollHistory.push(window.scrollY);
-                scrollHistoryIndex++;
-                target.scrollIntoView({ behavior: 'smooth' });
-                setTimeout(function() {
-                    scrollHistory.splice(scrollHistoryIndex + 1);
-                    scrollHistory.push(window.scrollY);
-                    scrollHistoryIndex++;
-                    postNavState();
-                }, 500);
-            }
+            if (target) jumpTo(target);
         };
 
         document.body.addEventListener('click', function(e) {
@@ -501,16 +479,7 @@ func buildHTML() -> String {
                 var target = document.getElementById(href.substring(1));
                 if (target) {
                     e.preventDefault();
-                    scrollHistory.splice(scrollHistoryIndex + 1);
-                    scrollHistory.push(window.scrollY);
-                    scrollHistoryIndex++;
-                    target.scrollIntoView({ behavior: 'smooth' });
-                    setTimeout(function() {
-                        scrollHistory.splice(scrollHistoryIndex + 1);
-                        scrollHistory.push(window.scrollY);
-                        scrollHistoryIndex++;
-                        postNavState();
-                    }, 500);
+                    jumpTo(target);
                 }
                 return;
             }
@@ -526,7 +495,8 @@ func buildHTML() -> String {
             }
         });
 
-        // Scroll tracking for active heading
+        // Scroll tracking: the heading the reader is under (for the TOC) and the
+        // offset itself (so Swift can stamp it into the history entry it leaves).
         var scrollTimer = null;
         window.addEventListener('scroll', function() {
             if (scrollTimer) return;
@@ -536,8 +506,10 @@ func buildHTML() -> String {
                 document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(el) {
                     if (el.getBoundingClientRect().top <= 20) active = el.id;
                 });
-                if (active && window.webkit && window.webkit.messageHandlers.activeHeading) {
-                    window.webkit.messageHandlers.activeHeading.postMessage(active);
+                if (window.webkit && window.webkit.messageHandlers.scrollState) {
+                    window.webkit.messageHandlers.scrollState.postMessage({
+                        heading: active, y: window.scrollY
+                    });
                 }
             }, 100);
         });

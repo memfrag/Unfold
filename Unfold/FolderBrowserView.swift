@@ -63,6 +63,10 @@ struct FolderBrowserView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .navigation) {
+            BackForwardButtons(navigationState: navigationState)
+        }
+
         ToolbarItem(placement: .primaryAction) {
             Button {
                 navigationState.edit()
@@ -144,6 +148,11 @@ struct FolderBrowserView: View {
         let file = LooseFile(url: url)
         currentFile = file
         navigationState.fileURL = url
+        // Every way of arriving at a file — the sidebar, a followed link, a
+        // history move — passes through here, so this is the one place the
+        // history has to be told. It ignores arrivals at the file we're already
+        // on, which is what keeps a history move from recording itself.
+        navigationState.navigated(to: url)
         // Capture the file itself rather than reading `currentFile` later, so
         // these can't outlive their selection and act on the wrong file.
         navigationState.reloadFromDisk = { file.reloadFromDisk() }
