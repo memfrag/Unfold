@@ -16,6 +16,11 @@ struct FolderBrowserView: View {
     /// title anyway). Purely a display concern — see `NotionExport`.
     let hidesNotionIDs: Bool
 
+    /// Set when the folder is an archive's unpacked copy: nothing here may be
+    /// edited, renamed, created or trashed, since none of it would reach the
+    /// archive. See `ZipFolder`.
+    let isReadOnly: Bool
+
     @State private var rootNodes: [FileNode] = []
     @State private var selectedURL: URL?
     @State private var currentFile: LooseFile?
@@ -136,6 +141,7 @@ struct FolderBrowserView: View {
     // MARK: - Selection & loading
 
     private func loadTree() {
+        navigationState.isReadOnly = isReadOnly
         // Links between files in the tree are followed in place, by selecting
         // the target — a link that points outside the folder has no row to
         // select, so it gets a window of its own.
@@ -188,15 +194,19 @@ struct FolderBrowserView: View {
         Button("Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([node.url])
         }
-        Button("New Markdown File") {
-            newMarkdownFile(in: node)
-        }
-        Divider()
-        Button("Rename…") {
-            rename(node)
-        }
-        Button("Move to Trash") {
-            moveToTrash(node)
+        // Everything below writes to disk, which for an unpacked archive means
+        // writing to a cached copy the archive will never see.
+        if !isReadOnly {
+            Button("New Markdown File") {
+                newMarkdownFile(in: node)
+            }
+            Divider()
+            Button("Rename…") {
+                rename(node)
+            }
+            Button("Move to Trash") {
+                moveToTrash(node)
+            }
         }
     }
 

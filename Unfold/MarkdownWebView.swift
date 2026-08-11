@@ -65,10 +65,16 @@ class NavigationState {
         }
     }
 
+    /// Set for a window browsing an unpacked archive: the files it shows are a
+    /// cached copy, so an edit would be written somewhere the archive never
+    /// sees. Better to offer no editing than editing that quietly goes nowhere.
+    var isReadOnly = false
+
     /// Edit is unavailable when an external editor is configured but the document
     /// has never been saved — there is no path to hand over.
     var canEdit: Bool {
-        !ExternalEditor.shared.isEnabled || fileURL != nil
+        guard !isReadOnly else { return false }
+        return !ExternalEditor.shared.isEnabled || fileURL != nil
     }
 
     /// The Edit action behind the toolbar button and Cmd+Shift+E.

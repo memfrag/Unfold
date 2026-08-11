@@ -37,7 +37,7 @@ struct UnfoldApp: App {
         .defaultSize(width: 600, height: 700)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Open Folder...") {
+                Button("Open Folder or Archive...") {
                     appDelegate.showOpenFolderPanel()
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		417BC8EB2F85B28F0071C8F8 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 417BC8EA2F85B28F0071C8F8 /* Sparkle */; };
+		4181C61D302A994300BC728D /* Zipcode in Frameworks */ = {isa = PBXBuildFile; productRef = 4181C61C302A994300BC728D /* Zipcode */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				417BC8EB2F85B28F0071C8F8 /* Sparkle in Frameworks */,
+				4181C61D302A994300BC728D /* Zipcode in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +86,7 @@
 			name = Unfold;
 			packageProductDependencies = (
 				417BC8EA2F85B28F0071C8F8 /* Sparkle */,
+				4181C61C302A994300BC728D /* Zipcode */,
 			);
 			productName = Unfold;
 			productReference = 41885F0A2F859FF5000CD880 /* Unfold.app */;
@@ -115,6 +118,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				417BC8E92F85B28F0071C8F8 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				4181C61B302A994300BC728D /* XCRemoteSwiftPackageReference "Zipcode" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 41885F0B2F859FF5000CD880 /* Products */;
@@ -369,6 +373,14 @@
 				version = 2.9.1;
 			};
 		};
+		4181C61B302A994300BC728D /* XCRemoteSwiftPackageReference "Zipcode" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apparata/Zipcode.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -376,6 +388,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 417BC8E92F85B28F0071C8F8 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		4181C61C302A994300BC728D /* Zipcode */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4181C61B302A994300BC728D /* XCRemoteSwiftPackageReference "Zipcode" */;
+			productName = Zipcode;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

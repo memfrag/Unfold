@@ -11,7 +11,7 @@ Unfold is a Markdown viewer/editor for macOS (SwiftUI document app). It opens `.
 - **Build/run:** Open `Unfold.xcodeproj` in Xcode, Cmd+B / Cmd+R. There is no command-line test suite — this is a small SwiftUI app with no test target.
 - **Release:** `scripts/build-and-notarize.sh` is the full pipeline — bumps version (Info.plist + pbxproj), archives (arm64, hardened runtime), exports, builds a DMG, notarizes (`notarytool` keychain profile `notary`), staples, signs for Sparkle, creates a GitHub release on `memfrag/Unfold`, and regenerates `appcast.xml`. It downloads Sparkle tools on first run and is interactive (prompts for version and release title).
 - **Auto-update:** Sparkle reads `appcast.xml` (committed at repo root, served from GitHub). Bundle ID is `io.apparata.Unfold`.
-- **Dependencies** (SwiftPM, pinned exact versions): `Sparkle` 2.9.1.
+- **Dependencies** (SwiftPM, pinned exact versions): `Sparkle` 2.9.1, `Zipcode` 1.0.1 (reading zip archives).
 
 ## Architecture
 
@@ -80,6 +80,18 @@ Reload goes through `NavigationState.reload()`, not the coordinator directly: it
 `FileNode` loads children lazily and shows only Markdown files and directories with Markdown *somewhere beneath them* (`containsMarkdown`, which checks each level's files before descending and skips symlinks so an ancestor link can't recurse forever). A Notion export is mostly per-page image folders; without that test the tree is dominated by rows that open nothing. The cost is that a genuinely empty directory has no row at all.
 
 **Notion mode** (`NotionExport.swift`) hides the 32-character page ID Notion appends to every exported filename, plus the extension. There is no setting: `looksLikeExport` samples up to 40 Markdown files under the root and turns it on when ≥60% match the pattern. The answer is computed **once**, in `AppDelegate.openFolderWindow` (which needs it for the window title too) and handed to `FolderBrowserView` — it reads directories, so it must not sit anywhere a view update can reach it. It affects display *only*: the real names are what the links between pages resolve against. `Rename…` is the single place the two meet — it offers the short name and `NotionExport.filename(for:isDirectory:renamedTo:)` puts the ID and extension back, since dropping the ID would break every link to that page. `displayName`/`filename` take `isDirectory` explicitly rather than inferring it, so a folder named `v1.0` doesn't lose its `.0`.
+
+### Zip archives
+
+A `.zip` opens as a folder-browser window: `ZipFolder.unpack` (Zipcode) unpacks it into `~/Library/Caches/<bundle id>/Archives/<name>-<digest of path>/` and the existing browser is pointed at that. Serving entries from the archive instead would have meant a virtual filesystem — `FileNode`, `LooseFile`, `FileWatcher`, the scheme handler and `openLocalLink` are all URL-and-disk based — so unpacking buys every one of them unchanged.
+
+What that costs and how each cost is met:
+- Edits to the unpacked copy would never reach the archive, so those windows are **read-only**: `NavigationState.isReadOnly` folds into `canEdit` (covering the toolbar button, Cmd+Shift+E *and* the menu item, which all route through it) and `FolderBrowserView` drops the mutating context-menu items.
+- A stamp file (`.unfold-unpacked`, holding the archive's mtime and size) makes re-opening instant and a rebuilt archive re-unpack. It is written **last**, so an unpack that died halfway isn't mistaken for a finished one. `pruneCache` drops copies untouched for 30 days, at launch.
+- Unpacking runs off the main thread (a large archive would freeze the app before any window appeared), with an in-flight `Set` so a double-drop doesn't open two windows. Windows are keyed by the **archive** URL, never the unpacked copy.
+- Entry names are input, not fact: `safeRelativePath` refuses absolute paths and `..` components (zip slip), and drops `__MACOSX`, `._*` and `.DS_Store`.
+
+Two shapes real exports come in, both handled in `unpack`: Notion's outer zip contains **nothing but** the real archive (`ExportBlock-…-Part-1.zip`, plus Part-2… when large), so `unpackNestedParts` unpacks an archive-of-only-archives in place and merges the parts — "nothing but" being what stops it touching a docs folder that merely ships a zip. And an archive that wraps everything in one folder is browsed at that folder, not the wrapper (`browsableRoot`), which is also where the window title comes from: Notion names its zip after two internal IDs, so `Unpacked.titleSource` prefers the wrapper's name.
 
 ### TOC / headings
 
