@@ -9,7 +9,7 @@ Unfold is a Markdown viewer/editor for macOS (SwiftUI document app). It opens `.
 ## Build & release
 
 - **Build/run:** Open `Unfold.xcodeproj` in Xcode, Cmd+B / Cmd+R. There is no command-line test suite — this is a small SwiftUI app with no test target.
-- **Release:** `scripts/build-and-notarize.sh` is the full pipeline — bumps version (Info.plist + pbxproj), archives (arm64, hardened runtime), exports, builds a DMG, notarizes (`notarytool` keychain profile `notary`), staples, signs for Sparkle, creates a GitHub release on `memfrag/Unfold`, and regenerates `appcast.xml`. It downloads Sparkle tools on first run and is interactive (prompts for version and release title).
+- **Release:** `scripts/build-and-notarize.sh` is the full pipeline — bumps version (Info.plist + pbxproj), archives (arm64, hardened runtime), exports, builds a DMG, notarizes (`notarytool` keychain profile `notary`), staples, signs for Sparkle, creates a GitHub release on `memfrag/Unfold`, and regenerates `appcast.xml`. It downloads the Sparkle tools when they are missing **or when the pinned `SPARKLE_VERSION` differs from the `.version` stamp beside them** (checking only for the binary would leave an older copy signing releases after a bump), and takes `--version` / `--title` to run non-interactively, prompting for either if omitted.
 - **Auto-update:** Sparkle reads `appcast.xml` (committed at repo root, served from GitHub). Bundle ID is `io.apparata.Unfold`.
 - **Dependencies** (SwiftPM, pinned exact versions): `Sparkle` 2.9.1, `Zipcode` 1.0.1 (reading zip archives).
 

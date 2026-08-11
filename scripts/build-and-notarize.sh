@@ -5,7 +5,7 @@ set -euo pipefail
 SCHEME="Unfold"
 APP_NAME="Unfold"
 KEYCHAIN_PROFILE="notary"
-SPARKLE_VERSION="2.9.0"
+SPARKLE_VERSION="2.9.1"
 GITHUB_REPO="memfrag/Unfold"
 
 # --- Paths ---
@@ -70,13 +70,21 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 # --- Download Sparkle tools if needed ---
-if [ ! -x "$SPARKLE_TOOLS_DIR/bin/sign_update" ]; then
+# The stamp records which version is installed. Testing only for the binary
+# would leave an older copy in place after SPARKLE_VERSION is bumped, so the
+# bump would quietly do nothing and the previous tools would sign the release.
+SPARKLE_TOOLS_STAMP="$SPARKLE_TOOLS_DIR/.version"
+INSTALLED_SPARKLE=$(cat "$SPARKLE_TOOLS_STAMP" 2>/dev/null || true)
+if [ ! -x "$SPARKLE_TOOLS_DIR/bin/sign_update" ] || [ "$INSTALLED_SPARKLE" != "$SPARKLE_VERSION" ]; then
     echo "==> Downloading Sparkle tools $SPARKLE_VERSION..."
-    curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz" -o "$BUILD_DIR/Sparkle.tar.xz"
+    curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz" -o "$BUILD_DIR/Sparkle.tar.xz" \
+        || error "Failed to download Sparkle tools $SPARKLE_VERSION."
+    rm -rf "$SPARKLE_TOOLS_DIR"
     mkdir -p "$SPARKLE_TOOLS_DIR"
-    tar -xf "$BUILD_DIR/Sparkle.tar.xz" -C "$SPARKLE_TOOLS_DIR"
+    tar -xf "$BUILD_DIR/Sparkle.tar.xz" -C "$SPARKLE_TOOLS_DIR" || error "Failed to unpack Sparkle tools."
     rm "$BUILD_DIR/Sparkle.tar.xz"
-    echo "    Sparkle tools installed at $SPARKLE_TOOLS_DIR"
+    echo "$SPARKLE_VERSION" > "$SPARKLE_TOOLS_STAMP"
+    echo "    Sparkle tools $SPARKLE_VERSION installed at $SPARKLE_TOOLS_DIR"
 fi
 
 # --- Version checking ---
