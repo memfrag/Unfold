@@ -3,6 +3,15 @@
     <channel>
         <title>Unfold</title>
         <item>
+            <title>1.8.0</title>
+            <pubDate>Tue, 11 Aug 2026 13:39:03 +0200</pubDate>
+            <sparkle:version>1.8.0</sparkle:version>
+            <sparkle:shortVersionString>1.8.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.8.0/Unfold-1.8.0.dmg" length="4243950" type="application/octet-stream" sparkle:edSignature="EiyMjtj4n9nFQwLE//JaQpOwycOXUqaptM8+RTUeQLd9JX2/FN6LlYF6qLD8NTtlZ+s1yP5h3tfikEtom5nhBA=="/>
+        </item>
+        <item>
             <title>1.7.0</title>
             <pubDate>Mon, 20 Jul 2026 17:58:25 +0200</pubDate>
             <sparkle:version>1.7.0</sparkle:version>
@@ -19,15 +28,6 @@
             <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.6.2/Unfold-1.6.2.dmg" length="3900703" type="application/octet-stream" sparkle:edSignature="ZfOuuf2Y5QtmMy4wa00F2/KnfqsZvZLoW0Ggw2+Am2b6EljufKcoAzUNHf67yoeM0PYCUtBsYsuu0qrtR362DA=="/>
-        </item>
-        <item>
-            <title>1.6.1</title>
-            <pubDate>Sun, 19 Jul 2026 17:06:53 +0200</pubDate>
-            <sparkle:version>1.6.1</sparkle:version>
-            <sparkle:shortVersionString>1.6.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.6.1/Unfold-1.6.1.dmg" length="4197867" type="application/octet-stream" sparkle:edSignature="QnCM/OdvcwuGR66+YzjMtbDKVhISdt2AuN1jMNVSipQ1u07TqhrPNOCbUg1cE7mO1J7p8HMCqK41/8xydTovCQ=="/>
         </item>
     </channel>
 </rss>
