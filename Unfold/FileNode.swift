@@ -39,21 +39,21 @@ final class FileNode: Identifiable {
         loadedChildren = nil
     }
 
-    /// The first Markdown file to auto-open when the browser window appears.
-    /// Prefers a file directly in this directory over one nested in a
-    /// subdirectory, so e.g. a top-level `README.md` wins over `docs/intro.md`.
-    var firstMarkdownFile: FileNode? {
-        if !isDirectory { return Self.isMarkdown(url) ? self : nil }
-        return Self.firstMarkdownFile(in: children ?? [])
+    /// The first file to auto-open when the browser window appears. Prefers a
+    /// file directly in this directory over one nested in a subdirectory, so
+    /// e.g. a top-level `README.md` wins over `docs/intro.md`.
+    var firstViewableFile: FileNode? {
+        if !isDirectory { return Self.isViewable(url) ? self : nil }
+        return Self.firstViewableFile(in: children ?? [])
     }
 
-    /// Among sibling nodes, return the first Markdown file directly present;
-    /// otherwise descend into subdirectories in order. (All non-directory nodes
-    /// are already Markdown thanks to the load-time filter.)
-    static func firstMarkdownFile(in nodes: [FileNode]) -> FileNode? {
+    /// Among sibling nodes, return the first file directly present; otherwise
+    /// descend into subdirectories in order. (All non-directory nodes are
+    /// already viewable thanks to the load-time filter.)
+    static func firstViewableFile(in nodes: [FileNode]) -> FileNode? {
         if let file = nodes.first(where: { !$0.isDirectory }) { return file }
         for dir in nodes where dir.isDirectory {
-            if let found = dir.firstMarkdownFile { return found }
+            if let found = dir.firstViewableFile { return found }
         }
         return nil
     }
@@ -83,25 +83,25 @@ final class FileNode: Identifiable {
     }
 
     /// Directories with well-known build/VCS noise names are hidden, as are
-    /// directories with no Markdown anywhere beneath them — a folder holding
-    /// nothing but a page's images (what a Notion export is largely made of) is
-    /// an empty row in a Markdown browser. Files are only shown if they are
-    /// Markdown. (Dotfiles are already excluded by `.skipsHiddenFiles` at the
-    /// enumeration step.)
+    /// directories with nothing viewable anywhere beneath them — a folder
+    /// holding nothing but a page's images (what a Notion export is largely made
+    /// of) is an empty row in a document browser. Files are only shown if the app
+    /// can display them. (Dotfiles are already excluded by `.skipsHiddenFiles` at
+    /// the enumeration step.)
     private static func shouldShow(_ url: URL, isDirectory: Bool) -> Bool {
         if isDirectory {
-            return !noiseDirectories.contains(url.lastPathComponent) && containsMarkdown(url)
+            return !noiseDirectories.contains(url.lastPathComponent) && containsViewableFile(url)
         }
-        return isMarkdown(url)
+        return isViewable(url)
     }
 
-    /// Whether any Markdown file lives in this directory or below it.
+    /// Whether any file the app can display lives in this directory or below it.
     ///
     /// Every file at a level is checked before descending, so the common case —
     /// a folder with its own pages in it — costs a single directory read.
     /// Symlinks are skipped rather than followed: one pointing at an ancestor
     /// would otherwise recurse forever.
-    private static func containsMarkdown(_ directory: URL) -> Bool {
+    private static func containsViewableFile(_ directory: URL) -> Bool {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: directory,
@@ -117,20 +117,31 @@ final class FileNode: Identifiable {
                 if !noiseDirectories.contains(entry.lastPathComponent) {
                     subdirectories.append(entry)
                 }
-            } else if isMarkdown(entry) {
+            } else if isViewable(entry) {
                 return true
             }
         }
-        return subdirectories.contains(where: containsMarkdown)
+        return subdirectories.contains(where: containsViewableFile)
     }
 
     /// The one place that decides what counts as a Markdown file — the tree
     /// filter, the folder browser's selection, and link-following all share it.
+    /// Markdown is the editable kind; HTML is only ever displayed.
     static func isMarkdown(_ url: URL) -> Bool {
         markdownExtensions.contains(url.pathExtension.lowercased())
     }
 
+    static func isHTML(_ url: URL) -> Bool {
+        htmlExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Whether the app can show this file at all.
+    static func isViewable(_ url: URL) -> Bool {
+        isMarkdown(url) || isHTML(url)
+    }
+
     private static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd"]
+    private static let htmlExtensions: Set<String> = ["html", "htm"]
 
     private static let noiseDirectories: Set<String> = [
         ".git", ".svn", ".hg",

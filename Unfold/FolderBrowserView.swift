@@ -21,9 +21,22 @@ struct FolderBrowserView: View {
     /// archive. See `ZipFolder`.
     let isReadOnly: Bool
 
+    /// What the detail pane is showing. Markdown is loaded into a `LooseFile` —
+    /// watched, editable, saved — while an HTML page is handed to WebKit as a
+    /// file URL and only ever displayed.
+    private enum Displayed {
+        case markdown(LooseFile)
+        case html(URL)
+
+        var looseFile: LooseFile? {
+            if case .markdown(let file) = self { return file }
+            return nil
+        }
+    }
+
     @State private var rootNodes: [FileNode] = []
     @State private var selectedURL: URL?
-    @State private var currentFile: LooseFile?
+    @State private var displayed: Displayed?
     @State private var navigationState = NavigationState()
     @State private var showTOC = false
 
@@ -40,13 +53,22 @@ struct FolderBrowserView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 360)
         } detail: {
             Group {
-                if let currentFile {
-                    FolderDetailPane(file: currentFile, navigationState: navigationState)
-                } else {
+                switch displayed {
+                case .markdown(let file):
+                    FolderDetailPane(file: file, navigationState: navigationState)
+                case .html(let url):
+                    HTMLWebView(
+                        fileURL: url,
+                        readAccessRoot: root,
+                        appearance: navigationState.appearanceMode,
+                        navigationState: navigationState
+                    )
+                    .id(url)
+                case nil:
                     ContentUnavailableView(
                         "No File Selected",
                         systemImage: "doc.text",
-                        description: Text("Choose a Markdown file from the sidebar.")
+                        description: Text("Choose a file from the sidebar.")
                     )
                 }
             }
@@ -84,7 +106,7 @@ struct FolderBrowserView: View {
                 Image(systemName: editIcon)
             }
             .help(navigationState.editLabel)
-            .disabled(currentFile == nil || !navigationState.canEdit)
+            .disabled(displayed == nil || !navigationState.canEdit)
         }
         .sharedBackgroundVisibility(.hidden)
 
@@ -95,7 +117,7 @@ struct FolderBrowserView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .help("Reload Preview")
-            .disabled(currentFile == nil)
+            .disabled(displayed == nil)
         }
         .sharedBackgroundVisibility(.hidden)
 
@@ -141,44 +163,68 @@ struct FolderBrowserView: View {
     // MARK: - Selection & loading
 
     private func loadTree() {
-        navigationState.isReadOnly = isReadOnly
         // Links between files in the tree are followed in place, by selecting
         // the target — a link that points outside the folder has no row to
-        // select, so it gets a window of its own.
+        // select, so it gets a window of its own. Both sides are compared as
+        // physical paths: the tree's URLs come from `FileManager` while the root
+        // may have been opened through a symlink, and a mismatch there would
+        // send a link that is plainly inside the folder off to its own window.
+        let rootPath = root.physicalURL.path
         navigationState.openFile = { url in
-            if url.path.hasPrefix(root.standardizedFileURL.path + "/") {
-                selectedURL = url
+            let target = url.physicalURL
+            if target.path.hasPrefix(rootPath + "/") {
+                selectedURL = target
             } else {
-                NavigationState.openInNewWindow(url)
+                NavigationState.openInNewWindow(target)
             }
         }
         rootNodes = FileNode.topLevelNodes(of: root)
-        // Auto-open the first Markdown file, preferring top-level files.
+        // Auto-open the first file, preferring top-level ones.
         if selectedURL == nil {
-            selectedURL = FileNode.firstMarkdownFile(in: rootNodes)?.url
+            selectedURL = FileNode.firstViewableFile(in: rootNodes)?.url
         }
     }
 
     private func openSelection(_ url: URL?) {
         // Flush any pending save on the file we're leaving.
-        currentFile?.flush()
+        displayed?.looseFile?.flush()
 
-        guard let url, FileNode.isMarkdown(url) else {
-            currentFile = nil
-            navigationState.reloadFromDisk = nil
-            navigationState.flushPendingEdits = nil
+        // Hooks belonging to the outgoing file, cleared before the incoming one
+        // sets whichever of them apply to it.
+        navigationState.reloadFromDisk = nil
+        navigationState.flushPendingEdits = nil
+        navigationState.reloadDisplay = nil
+        navigationState.fileURL = url
+        navigationState.isEditable = false
+
+        guard let url, FileNode.isViewable(url) else {
+            displayed = nil
             navigationState.fileURL = nil
+            navigationState.headings = []
             return
         }
-        let file = LooseFile(url: url)
-        currentFile = file
-        navigationState.fileURL = url
+
         // Every way of arriving at a file — the sidebar, a followed link, a
         // history move — passes through here, so this is the one place the
         // history has to be told. It ignores arrivals at the file we're already
         // on, which is what keeps a history move from recording itself.
         navigationState.navigated(to: url)
-        // Capture the file itself rather than reading `currentFile` later, so
+
+        guard FileNode.isMarkdown(url) else {
+            // An HTML page: nothing to edit, and no headings to offer — the TOC
+            // is built by the Markdown renderer, so the outgoing file's would
+            // otherwise linger in the inspector.
+            displayed = .html(url)
+            navigationState.headings = []
+            return
+        }
+
+        let file = LooseFile(url: url)
+        displayed = .markdown(file)
+        // Files in an unpacked archive are a cached copy; editing them would
+        // never reach the archive.
+        navigationState.isEditable = !isReadOnly
+        // Capture the file itself rather than reading `displayed` later, so
         // these can't outlive their selection and act on the wrong file.
         navigationState.reloadFromDisk = { file.reloadFromDisk() }
         navigationState.flushPendingEdits = { file.flush() }

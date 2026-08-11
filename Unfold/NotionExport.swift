@@ -34,7 +34,7 @@ enum NotionExport {
                 if values?.isSymbolicLink == true { continue }
                 if values?.isDirectory == true {
                     directories.append(entry)
-                } else if FileNode.isMarkdown(entry) {
+                } else if FileNode.isViewable(entry) {
                     sampled += 1
                     if pageIDRange(in: entry.deletingPathExtension().lastPathComponent) != nil {
                         matched += 1

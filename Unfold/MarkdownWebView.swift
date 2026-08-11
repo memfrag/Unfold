@@ -57,6 +57,10 @@ class NavigationState {
     /// sidebar); left unset, the link opens in a new document window.
     var openFile: ((URL) -> Void)?
 
+    /// Set by a pane that reloads itself rather than through the Markdown
+    /// coordinator — an HTML page has no bridge, so Reload is just WebKit's.
+    var reloadDisplay: (() -> Void)?
+
     /// Open a Markdown file in a document window of its own — the fallback when
     /// the current window can't show it itself.
     static func openInNewWindow(_ url: URL) {
@@ -65,15 +69,17 @@ class NavigationState {
         }
     }
 
-    /// Set for a window browsing an unpacked archive: the files it shows are a
-    /// cached copy, so an edit would be written somewhere the archive never
-    /// sees. Better to offer no editing than editing that quietly goes nowhere.
-    var isReadOnly = false
+    /// Whether what's on screen can be edited at all. Cleared for an HTML page,
+    /// which WebKit displays rather than the source editor, and for every file in
+    /// an unpacked archive, where an edit would be written to a cached copy the
+    /// archive never sees. Better to offer no editing than editing that quietly
+    /// goes nowhere.
+    var isEditable = true
 
     /// Edit is unavailable when an external editor is configured but the document
     /// has never been saved — there is no path to hand over.
     var canEdit: Bool {
-        guard !isReadOnly else { return false }
+        guard isEditable else { return false }
         return !ExternalEditor.shared.isEnabled || fileURL != nil
     }
 
@@ -106,7 +112,9 @@ class NavigationState {
     /// SwiftUI to propagate — `updateNSView` won't have run yet at this point, so
     /// rendering off `lastMarkdown` here would show the stale copy.
     func reload() {
-        if let text = reloadFromDisk?() {
+        if let reloadDisplay {
+            reloadDisplay()
+        } else if let text = reloadFromDisk?() {
             coordinator?.render(markdown: text)
         } else {
             coordinator?.reload()
@@ -318,7 +326,7 @@ struct MarkdownWebView: NSViewRepresentable {
                 return
             }
 
-            if !isDirectory.boolValue, FileNode.isMarkdown(target) {
+            if !isDirectory.boolValue, FileNode.isViewable(target) {
                 if let openFile = navigationState?.openFile {
                     openFile(target)
                 } else {
