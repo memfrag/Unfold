@@ -57,6 +57,14 @@ struct UnfoldApp: App {
                 .disabled(navigationState?.canGoForward != true)
             }
 
+            CommandGroup(after: .sidebar) {
+                Button("Refresh Folder") {
+                    navigationState?.refreshTree?()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(navigationState?.refreshTree == nil)
+            }
+
             CommandGroup(after: .toolbar) {
                 Button(editCommandTitle) {
                     navigationState?.edit()

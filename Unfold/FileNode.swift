@@ -39,6 +39,36 @@ final class FileNode: Identifiable {
         loadedChildren = nil
     }
 
+    /// Re-read every directory that has been loaded and reconcile it with what
+    /// is on screen, so files added or removed by something outside the app show
+    /// up. Directories nobody has expanded are left alone — they are still lazy,
+    /// and will read fresh when they are opened.
+    ///
+    /// The children list is only replaced when it genuinely differs, since
+    /// assigning it tells every view observing this node to update.
+    func refresh() {
+        guard isDirectory, let existing = loadedChildren else { return }
+        let reconciled = Self.reconcile(Self.loadChildren(of: url), with: existing)
+        if reconciled.map(\.url) != existing.map(\.url) {
+            loadedChildren = reconciled
+        }
+        for child in reconciled where child.isDirectory {
+            child.refresh()
+        }
+    }
+
+    /// Match a freshly-read directory listing against the nodes already on
+    /// screen, keeping the existing instance wherever the URL is unchanged.
+    ///
+    /// Identity is the point. Handing `OutlineGroup` a wholly new set of nodes
+    /// would take the disclosure state with it and collapse folders the reader
+    /// had opened — and each surviving node also carries its own loaded
+    /// children, which a replacement would throw away and have to read again.
+    static func reconcile(_ fresh: [FileNode], with existing: [FileNode]) -> [FileNode] {
+        let byURL = Dictionary(existing.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
+        return fresh.map { byURL[$0.url] ?? $0 }
+    }
+
     /// The first file to auto-open when the browser window appears. Prefers a
     /// file directly in this directory over one nested in a subdirectory, so
     /// e.g. a top-level `README.md` wins over `docs/intro.md`.

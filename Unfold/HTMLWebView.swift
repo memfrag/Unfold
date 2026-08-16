@@ -46,22 +46,19 @@ struct HTMLWebView: NSViewRepresentable {
         webView.appearance = appearance.nsAppearance
 
         context.coordinator.webView = webView
-        context.coordinator.fileURL = fileURL
         context.coordinator.navigationState = navigationState
-        context.coordinator.watch(fileURL)
-
-        // The reader has no bridge to a Markdown coordinator here, so Reload has
-        // to be told what it means for this pane.
-        navigationState.reloadDisplay = { [weak webView] in webView?.reload() }
-
-        // Both sides must be the *same* spelling of the path, or WebKit refuses
-        // the load as being outside the directory it just granted.
-        webView.loadFileURL(fileURL.physicalURL, allowingReadAccessTo: readAccessRoot.physicalURL)
+        context.coordinator.show(fileURL, in: webView, readAccessRoot: readAccessRoot)
         return webView
     }
 
+    /// The same web view serves every HTML file the window visits — going to
+    /// another page loads into it rather than replacing it. A fresh `WKWebView`
+    /// per file would paint its own empty background first, so every navigation
+    /// flashed white; loading in place leaves the previous page up until the new
+    /// one is ready to draw.
     func updateNSView(_ webView: WKWebView, context: Context) {
         webView.appearance = appearance.nsAppearance
+        context.coordinator.show(fileURL, in: webView, readAccessRoot: readAccessRoot)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -86,10 +83,32 @@ struct HTMLWebView: NSViewRepresentable {
         weak var webView: WKWebView?
         var fileURL: URL?
         var navigationState: NavigationState?
+        private var loadedURL: URL?
         private var watcher: FileWatcher?
 
+        /// Put `url` on screen, unless it is already there.
+        ///
+        /// Called from both `makeNSView` and every `updateNSView`, so the guard
+        /// is what keeps a re-render from reloading the page out from under the
+        /// reader — and what makes switching files a load rather than a rebuild.
+        func show(_ url: URL, in webView: WKWebView, readAccessRoot: URL) {
+            // Both sides must be the *same* spelling of the path, or WebKit
+            // refuses the load as being outside the directory it just granted.
+            let target = url.physicalURL
+            guard target != loadedURL else { return }
+            loadedURL = target
+            fileURL = url
+
+            // Re-established per file: the watcher follows the page on screen,
+            // and Reload is cleared by the browser on every selection change.
+            watch(url)
+            navigationState?.reloadDisplay = { [weak webView] in webView?.reload() }
+
+            webView.loadFileURL(target, allowingReadAccessTo: readAccessRoot.physicalURL)
+        }
+
         /// Pick up edits made elsewhere, as the Markdown side does.
-        func watch(_ url: URL) {
+        private func watch(_ url: URL) {
             watcher = FileWatcher(url: url) { [weak self] in
                 self?.webView?.reload()
             }

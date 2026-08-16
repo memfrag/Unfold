@@ -61,6 +61,11 @@ class NavigationState {
     /// coordinator — an HTML page has no bridge, so Reload is just WebKit's.
     var reloadDisplay: (() -> Void)?
 
+    /// Set by the folder browser to re-read its tree. Left nil by the
+    /// single-document window, which has no tree — and that is what the
+    /// View ▸ Refresh Folder command keys its availability off.
+    var refreshTree: (() -> Void)?
+
     /// Open a Markdown file in a document window of its own — the fallback when
     /// the current window can't show it itself.
     static func openInNewWindow(_ url: URL) {

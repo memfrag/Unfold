@@ -39,6 +39,7 @@ struct FolderBrowserView: View {
     @State private var displayed: Displayed?
     @State private var navigationState = NavigationState()
     @State private var showTOC = false
+    @State private var watcher: FolderWatcher?
 
     var body: some View {
         NavigationSplitView {
@@ -57,13 +58,15 @@ struct FolderBrowserView: View {
                 case .markdown(let file):
                     FolderDetailPane(file: file, navigationState: navigationState)
                 case .html(let url):
+                    // Deliberately no `.id(url)`: one web view serves every HTML
+                    // file, so going to another page loads into it instead of
+                    // building a new one that flashes white on the way in.
                     HTMLWebView(
                         fileURL: url,
                         readAccessRoot: root,
                         appearance: navigationState.appearanceMode,
                         navigationState: navigationState
                     )
-                    .id(url)
                 case nil:
                     ContentUnavailableView(
                         "No File Selected",
@@ -178,10 +181,36 @@ struct FolderBrowserView: View {
                 NavigationState.openInNewWindow(target)
             }
         }
+        navigationState.refreshTree = { refreshTree() }
         rootNodes = FileNode.topLevelNodes(of: root)
         // Auto-open the first file, preferring top-level ones.
         if selectedURL == nil {
             selectedURL = FileNode.firstViewableFile(in: rootNodes)?.url
+        }
+        // An unpacked archive is a private copy that nothing else writes to, so
+        // there is nothing to watch for.
+        if !isReadOnly {
+            watcher = FolderWatcher(url: root) { refreshTree() }
+        }
+    }
+
+    /// Bring the tree back in step with the folder — a file added, renamed or
+    /// removed by something outside the app. Driven by `FolderWatcher` and by
+    /// View ▸ Refresh Folder.
+    private func refreshTree() {
+        // The top level is reconciled the same way a directory's children are,
+        // so nodes (and the subtrees they have loaded) survive the refresh.
+        let fresh = FileNode.reconcile(FileNode.topLevelNodes(of: root), with: rootNodes)
+        if fresh.map(\.url) != rootNodes.map(\.url) {
+            rootNodes = fresh
+        }
+        for node in fresh where node.isDirectory {
+            node.refresh()
+        }
+
+        // The file on screen may be the one that just disappeared.
+        if let selectedURL, !FileManager.default.fileExists(atPath: selectedURL.path) {
+            self.selectedURL = nil
         }
     }
 
