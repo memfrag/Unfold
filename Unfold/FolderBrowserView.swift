@@ -47,20 +47,45 @@ struct FolderBrowserView: View {
     @State private var navigationState = NavigationState()
     @State private var showTOC = false
     @State private var watcher: FolderWatcher?
-    @State private var emptyAreaClicks = EmptyAreaClickCatcher()
+    @State private var emptyArea = SidebarEmptyArea()
+    /// The row a Finder drag is hovering over, and whether it's over the empty
+    /// space instead (the root) — for highlighting only.
+    @State private var dropTargetRow: URL?
+    @State private var isRootDropTarget = false
 
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedURL) {
                 OutlineGroup(rootNodes, id: \.id, children: \.children) { node in
-                    FileRow(node: node, name: label(for: node))
-                        .background(SidebarTableFinder(catcher: emptyAreaClicks))
+                    FileRow(node: node, name: label(for: node), isDropTarget: dropTargetRow == node.url)
+                        .background(SidebarTableFinder(catcher: emptyArea))
+                        .dropDestination(for: URL.self) { urls, _ in
+                            acceptDrop(urls, into: targetDirectory(for: node.url))
+                        } isTargeted: { targeted in
+                            if targeted {
+                                dropTargetRow = isReadOnly ? nil : node.url
+                            } else if dropTargetRow == node.url {
+                                dropTargetRow = nil
+                            }
+                        }
                         .tag(node.url)
+                }
+            }
+            // A drop on the empty space below the rows goes to the root. That
+            // space belongs to the table, which only knows about rows, so a
+            // `dropDestination` here would never be called — it's handled by
+            // `SidebarEmptyArea` instead.
+            .overlay {
+                if isRootDropTarget {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                        .padding(4)
+                        .allowsHitTesting(false)
                 }
             }
             // Rows only: SwiftUI doesn't offer this on the empty space below
             // them, so the root's menu is `rootContextMenu`, shown by
-            // `EmptyAreaClickCatcher`.
+            // `SidebarEmptyArea`.
             .contextMenu(forSelectionType: URL.self) { urls in
                 if let url = urls.first { contextMenu(for: url) }
             }
@@ -102,8 +127,12 @@ struct FolderBrowserView: View {
         .focusedSceneValue(\.navigationState, navigationState)
         .toolbar { toolbarContent }
         .onAppear {
-            emptyAreaClicks.onClick = { selectedURL = nil }
-            emptyAreaClicks.menu = rootContextMenu
+            emptyArea.onClick = { selectedURL = nil }
+            emptyArea.menu = rootContextMenu
+            if !isReadOnly {
+                emptyArea.onDrop = { urls in acceptDrop(urls, into: root) }
+                emptyArea.onDropTargeted = { isRootDropTarget = $0 }
+            }
             loadTree()
         }
         .onChange(of: selectedURL) { _, newValue in openSelection(newValue) }
@@ -370,7 +399,7 @@ struct FolderBrowserView: View {
     }
 
     /// The context menu for the empty space below the rows: the root's. An
-    /// `NSMenu` because it is shown from AppKit — see `EmptyAreaClickCatcher`.
+    /// `NSMenu` because it is shown from AppKit — see `SidebarEmptyArea`.
     private func rootContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(ClosureMenuItem("Reveal in Finder") { [root] in
@@ -382,6 +411,121 @@ struct FolderBrowserView: View {
             menu.addItem(ClosureMenuItem("New Markdown File…") { promptForNewMarkdownFile(in: root) })
         }
         return menu
+    }
+
+    // MARK: - Dropping files in
+
+    /// A Finder drop onto the sidebar: copy the items into `dir`. Always a copy,
+    /// never a move — the originals stay where they were. Anything is accepted,
+    /// not just what the sidebar shows, since pages refer to images beside them.
+    ///
+    /// The copying is deferred to the next turn of the run loop: it may put up a
+    /// name-clash alert, and running a modal inside the drop callback would hold
+    /// the drag session open behind it.
+    private func acceptDrop(_ urls: [URL], into dir: URL) -> Bool {
+        let files = urls.filter(\.isFileURL)
+        guard !isReadOnly, !files.isEmpty else { return false }
+        DispatchQueue.main.async { copyIn(files, to: dir) }
+        return true
+    }
+
+    private enum ClashChoice {
+        case keepBoth, replace, stop
+    }
+
+    private func copyIn(_ sources: [URL], to dir: URL) {
+        let fm = FileManager.default
+        let dirPath = dir.physicalURL.path
+        var choiceForAll: ClashChoice?
+        var copied: [URL] = []
+
+        copying: for (index, source) in sources.enumerated() {
+            let sourcePath = source.physicalURL.path
+            // A folder can't be copied into itself or anything beneath it.
+            if dirPath == sourcePath || dirPath.hasPrefix(sourcePath + "/") {
+                NSSound.beep()
+                continue
+            }
+            // Dropped back into the folder it's already in: nothing to do.
+            if source.physicalURL.deletingLastPathComponent().path == dirPath {
+                continue
+            }
+
+            var dest = dir.appendingPathComponent(source.lastPathComponent)
+            if fm.fileExists(atPath: dest.path) {
+                let choice = choiceForAll ?? askAboutClash(
+                    name: source.lastPathComponent,
+                    offerApplyToAll: index < sources.count - 1,
+                    applyToAll: &choiceForAll
+                )
+                switch choice {
+                case .stop:
+                    break copying
+                case .keepBoth:
+                    dest = uniqueDestination(for: source, in: dir)
+                case .replace:
+                    // To the Trash rather than deleted, so a wrong answer can
+                    // be undone.
+                    do {
+                        try fm.trashItem(at: dest, resultingItemURL: nil)
+                    } catch {
+                        presentError("Couldn’t replace “\(dest.lastPathComponent)”", error)
+                        continue
+                    }
+                }
+            }
+
+            do {
+                try fm.copyItem(at: source, to: dest)
+                copied.append(dest)
+            } catch {
+                presentError("Couldn’t copy “\(source.lastPathComponent)”", error)
+            }
+        }
+
+        guard !copied.isEmpty else { return }
+        refreshTree()
+        if copied.count == 1, let only = copied.first, FileNode.isViewable(only) {
+            selectedURL = only
+        }
+    }
+
+    /// Finder's question for a name that's already taken. With more items to
+    /// come it offers "Apply to all", whose answer is written to `applyToAll`.
+    private func askAboutClash(name: String, offerApplyToAll: Bool, applyToAll: inout ClashChoice?) -> ClashChoice {
+        let alert = NSAlert()
+        alert.messageText = "An item named “\(name)” already exists in this location."
+        alert.informativeText = "Do you want to replace it with the one you’re copying?"
+        alert.addButton(withTitle: "Keep Both")
+        alert.addButton(withTitle: "Stop")
+        alert.addButton(withTitle: "Replace")
+        if offerApplyToAll {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Apply to all"
+        }
+        let choice: ClashChoice
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: choice = .keepBoth
+        case .alertThirdButtonReturn: choice = .replace
+        default: choice = .stop
+        }
+        if alert.suppressionButton?.state == .on { applyToAll = choice }
+        return choice
+    }
+
+    /// "name 2.ext", "name 3.ext", … — the first that's free. A folder's name
+    /// is taken whole, so `v1.0` becomes `v1.0 2`, not `v1 2.0`.
+    private func uniqueDestination(for source: URL, in dir: URL) -> URL {
+        let isDirectory = Self.isDirectory(source)
+        let ext = isDirectory ? "" : source.pathExtension
+        let base = ext.isEmpty ? source.lastPathComponent : source.deletingPathExtension().lastPathComponent
+        var n = 2
+        while true {
+            let name = ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)"
+            let candidate = dir.appendingPathComponent(name)
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            n += 1
+        }
     }
 
     private static func isDirectory(_ url: URL) -> Bool {
@@ -500,6 +644,7 @@ struct FolderBrowserView: View {
 private struct FileRow: View {
     let node: FileNode
     let name: String
+    var isDropTarget = false
 
     var body: some View {
         Label {
@@ -508,38 +653,68 @@ private struct FileRow: View {
             Image(systemName: node.isDirectory ? "folder" : "doc.text")
                 .foregroundStyle(node.isDirectory ? Color.accentColor : Color.secondary)
         }
+        // The full width is the drop target, not just the label's own extent.
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background {
+            if isDropTarget {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.accentColor.opacity(0.25))
+                    .padding(.horizontal, -6)
+            }
+        }
     }
 }
 
 /// Gives the empty space below the sidebar's rows the behavior the list
-/// doesn't: a click there clears the selection — which is what decides where
-/// the + menu puts new items, so without it there'd be no way back to "the top
-/// level" once anything had been clicked — and a right-click (or Control-click)
-/// there shows the root's context menu, which `contextMenu(forSelectionType:)`
-/// only offers on rows.
+/// doesn't. That space belongs to the list's table view, which only knows about
+/// rows:
+///
+/// - A click there clears the selection — which is what decides where the +
+///   menu puts new items, so without it there'd be no way back to "the top
+///   level" once anything had been clicked.
+/// - A right-click (or Control-click) shows the root's context menu, which
+///   `contextMenu(forSelectionType:)` only offers on rows.
+/// - A Finder drop there copies into the root. The table claims every drag over
+///   it, so a `dropDestination` on the `List` is never called.
+///
+/// Clicks are caught by a local mouse-down monitor, acted on only when they hit
+/// the table (or the clip view around it, when the rows don't fill the column)
+/// with no row under them, so rows, disclosure triangles and the + button
+/// floating over the bottom are left alone. Drags are caught by `DropLayer`, a
+/// transparent view over the scroll view that passes everything over a row
+/// through to the table, where the rows' own drop destinations take it.
 ///
 /// The table is found from inside a row (`SidebarTableFinder`), since that is
 /// the one place guaranteed to be in its view hierarchy — a background on the
-/// `List` itself is never hosted in a window. A mouse-down is acted on only
-/// when it hits that table (or the clip view around it, when the rows don't
-/// fill the column) with no row under it, so rows, disclosure triangles and
-/// the + button floating over the bottom are left alone.
-final class EmptyAreaClickCatcher {
+/// `List` itself is never hosted in a window.
+final class SidebarEmptyArea {
     var onClick: (() -> Void)?
     var menu: (() -> NSMenu)?
+    var onDrop: (([URL]) -> Bool)?
+    var onDropTargeted: ((Bool) -> Void)?
     private var monitor: Any?
+    private var dropLayer: DropLayer?
 
     weak var table: NSTableView? {
         didSet {
-            guard table != nil, monitor == nil else { return }
+            guard let table, monitor == nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
                 self?.handle(event) ?? event
+            }
+            if let scrollView = table.enclosingScrollView {
+                let layer = DropLayer(owner: self, table: table)
+                layer.frame = scrollView.bounds
+                layer.autoresizingMask = [.width, .height]
+                scrollView.addSubview(layer)
+                dropLayer = layer
             }
         }
     }
 
     deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
+        dropLayer?.removeFromSuperview()
     }
 
     /// Returns the event to let it through, nil to swallow it.
@@ -564,6 +739,98 @@ final class EmptyAreaClickCatcher {
         guard hit === table || (hit as? NSClipView)?.documentView === table else { return false }
         return table.row(at: table.convert(event.locationInWindow, from: nil)) == -1
     }
+
+    /// Lies over the whole scroll view, invisible to clicks (`hitTest` is nil;
+    /// dragging destinations are found separately). Over a row it forwards each
+    /// dragging message to the table untouched; over empty space it takes the
+    /// drop itself. Moving between the two during one drag is told to the table
+    /// as an exit or entry, so its own highlighting stays consistent.
+    final class DropLayer: NSView {
+        private weak var owner: SidebarEmptyArea?
+        private weak var table: NSTableView?
+        private var isOverEmptyArea = false
+
+        init(owner: SidebarEmptyArea, table: NSTableView) {
+            self.owner = owner
+            self.table = table
+            super.init(frame: .zero)
+            registerForDraggedTypes([.fileURL])
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        private func overEmptyArea(_ info: NSDraggingInfo) -> Bool {
+            guard let table, owner?.onDrop != nil else { return false }
+            return table.row(at: table.convert(info.draggingLocation, from: nil)) == -1
+        }
+
+        private func update(_ info: NSDraggingInfo, entering: Bool) -> NSDragOperation {
+            let empty = overEmptyArea(info)
+            if empty != isOverEmptyArea || entering {
+                if empty {
+                    if !entering { table?.draggingExited(info) }
+                } else {
+                    owner?.onDropTargeted?(false)
+                    isOverEmptyArea = false
+                    return table?.draggingEntered(info) ?? []
+                }
+                isOverEmptyArea = empty
+                owner?.onDropTargeted?(empty)
+            }
+            if empty { return .copy }
+            return table?.draggingUpdated(info) ?? []
+        }
+
+        override func draggingEntered(_ info: NSDraggingInfo) -> NSDragOperation {
+            update(info, entering: true)
+        }
+
+        override func draggingUpdated(_ info: NSDraggingInfo) -> NSDragOperation {
+            update(info, entering: false)
+        }
+
+        override func draggingExited(_ info: NSDraggingInfo?) {
+            if isOverEmptyArea {
+                isOverEmptyArea = false
+                owner?.onDropTargeted?(false)
+            } else {
+                table?.draggingExited(info)
+            }
+        }
+
+        override func prepareForDragOperation(_ info: NSDraggingInfo) -> Bool {
+            if isOverEmptyArea { return true }
+            guard let table, table.responds(to: #selector(prepareForDragOperation(_:))) else { return true }
+            return table.prepareForDragOperation(info)
+        }
+
+        override func performDragOperation(_ info: NSDraggingInfo) -> Bool {
+            guard isOverEmptyArea else {
+                return table?.performDragOperation(info) ?? false
+            }
+            isOverEmptyArea = false
+            owner?.onDropTargeted?(false)
+            let urls = info.draggingPasteboard.readObjects(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]
+            ) as? [URL] ?? []
+            return owner?.onDrop?(urls) ?? false
+        }
+
+        // The last two are optional in the protocol; only forwarded if the
+        // table implements them.
+        override func concludeDragOperation(_ info: NSDraggingInfo?) {
+            guard let table, table.responds(to: #selector(concludeDragOperation(_:))) else { return }
+            table.concludeDragOperation(info)
+        }
+
+        override func draggingEnded(_ info: NSDraggingInfo) {
+            guard let table, table.responds(to: #selector(draggingEnded(_:))) else { return }
+            table.draggingEnded(info)
+        }
+    }
 }
 
 /// An `NSMenuItem` that runs a closure, for menus built in SwiftUI code.
@@ -581,18 +848,18 @@ private final class ClosureMenuItem: NSMenuItem {
     @objc private func run() { handler() }
 }
 
-/// Hands the sidebar's table view to an `EmptyAreaClickCatcher`, by looking
+/// Hands the sidebar's table view to an `SidebarEmptyArea`, by looking
 /// up from a row once that row is in a window.
 private struct SidebarTableFinder: NSViewRepresentable {
-    let catcher: EmptyAreaClickCatcher
+    let catcher: SidebarEmptyArea
 
     func makeNSView(context: Context) -> Probe { Probe(catcher: catcher) }
     func updateNSView(_ view: Probe, context: Context) {}
 
     final class Probe: NSView {
-        let catcher: EmptyAreaClickCatcher
+        let catcher: SidebarEmptyArea
 
-        init(catcher: EmptyAreaClickCatcher) {
+        init(catcher: SidebarEmptyArea) {
             self.catcher = catcher
             super.init(frame: .zero)
         }
