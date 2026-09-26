@@ -3,6 +3,15 @@
     <channel>
         <title>Unfold</title>
         <item>
+            <title>1.10.0</title>
+            <pubDate>Sat, 26 Sep 2026 13:43:12 +0200</pubDate>
+            <sparkle:version>1.10.0</sparkle:version>
+            <sparkle:shortVersionString>1.10.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.10.0/Unfold-1.10.0.dmg" length="4358228" type="application/octet-stream" sparkle:edSignature="yhHoPo8RwRVB28INoup3Fpo0Ryu6RyLZQil9+3S9ePXnTQ+KivvLnoSiNoD540b01pejZqFShhBpnsMGk4xNBQ=="/>
+        </item>
+        <item>
             <title>1.9.0</title>
             <pubDate>Sun, 16 Aug 2026 16:14:51 +0200</pubDate>
             <sparkle:version>1.9.0</sparkle:version>
@@ -19,15 +28,6 @@
             <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.8.0/Unfold-1.8.0.dmg" length="4243950" type="application/octet-stream" sparkle:edSignature="EiyMjtj4n9nFQwLE//JaQpOwycOXUqaptM8+RTUeQLd9JX2/FN6LlYF6qLD8NTtlZ+s1yP5h3tfikEtom5nhBA=="/>
-        </item>
-        <item>
-            <title>1.7.0</title>
-            <pubDate>Mon, 20 Jul 2026 17:58:25 +0200</pubDate>
-            <sparkle:version>1.7.0</sparkle:version>
-            <sparkle:shortVersionString>1.7.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.7.0/Unfold-1.7.0.dmg" length="4216491" type="application/octet-stream" sparkle:edSignature="eeR3otywdTH+ye+kUT701IsrllwFetsl045hz8p9tqCfKkJojdo6mfPc8kyl88qRRNE300lGfDxoLSegf5TUBQ=="/>
         </item>
     </channel>
 </rss>
