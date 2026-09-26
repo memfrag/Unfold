@@ -52,23 +52,30 @@ struct FolderBrowserView: View {
     /// space instead (the root) — for highlighting only.
     @State private var dropTargetRow: URL?
     @State private var isRootDropTarget = false
+    /// The sidebar filter. While it's non-empty the list shows `filteredNodes`
+    /// in place of `rootNodes`, which is left untouched — so clearing it brings
+    /// back the tree exactly as it was, open folders and all.
+    @State private var filterText = ""
+    @State private var filteredNodes: [FileNode]?
+    @State private var filterExpanded: Set<URL> = []
+    /// Bumped whenever the tree is refreshed, so a filter that's showing is
+    /// re-run against what's now on disk.
+    @State private var treeGeneration = 0
 
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedURL) {
-                OutlineGroup(rootNodes, id: \.id, children: \.children) { node in
-                    FileRow(node: node, name: label(for: node), isDropTarget: dropTargetRow == node.url)
-                        .background(SidebarTableFinder(catcher: emptyArea))
-                        .dropDestination(for: URL.self) { urls, _ in
-                            acceptDrop(urls, into: targetDirectory(for: node.url))
-                        } isTargeted: { targeted in
-                            if targeted {
-                                dropTargetRow = isReadOnly ? nil : node.url
-                            } else if dropTargetRow == node.url {
-                                dropTargetRow = nil
-                            }
-                        }
-                        .tag(node.url)
+                if let filteredNodes {
+                    ForEach(filteredNodes) { filteredRow($0) }
+                } else {
+                    OutlineGroup(rootNodes, id: \.id, children: \.children) { node in
+                        sidebarRow(node)
+                    }
+                }
+            }
+            .overlay {
+                if filteredNodes?.isEmpty == true {
+                    ContentUnavailableView.search(text: filterText)
                 }
             }
             // A drop on the empty space below the rows goes to the root. That
@@ -89,10 +96,7 @@ struct FolderBrowserView: View {
             .contextMenu(forSelectionType: URL.self) { urls in
                 if let url = urls.first { contextMenu(for: url) }
             }
-            .safeAreaBar(edge: .bottom) {
-                // An unpacked archive can't be added to — see `isReadOnly`.
-                if !isReadOnly { addBar }
-            }
+            .safeAreaBar(edge: .bottom) { sidebarBar }
             .navigationTitle(rootTitle)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 360)
         } detail: {
@@ -136,6 +140,88 @@ struct FolderBrowserView: View {
             loadTree()
         }
         .onChange(of: selectedURL) { _, newValue in openSelection(newValue) }
+        .task(id: FilterKey(text: filterText, generation: treeGeneration)) {
+            await runFilter()
+        }
+    }
+
+    // MARK: - Sidebar rows
+
+    /// One row, the same whether it's in the full tree or a filtered one.
+    private func sidebarRow(_ node: FileNode) -> some View {
+        FileRow(node: node, name: label(for: node), isDropTarget: dropTargetRow == node.url)
+            .background(SidebarTableFinder(catcher: emptyArea))
+            .dropDestination(for: URL.self) { urls, _ in
+                acceptDrop(urls, into: targetDirectory(for: node.url))
+            } isTargeted: { targeted in
+                if targeted {
+                    dropTargetRow = isReadOnly ? nil : node.url
+                } else if dropTargetRow == node.url {
+                    dropTargetRow = nil
+                }
+            }
+            .tag(node.url)
+    }
+
+    /// A row of the filtered tree. `DisclosureGroup` rather than `OutlineGroup`,
+    /// because a filtered tree has to open *itself* — the matches are what the
+    /// reader is looking for — and `OutlineGroup` offers no control over that.
+    private func filteredRow(_ node: FileNode) -> AnyView {
+        guard node.isDirectory else { return AnyView(sidebarRow(node)) }
+        let isExpanded = Binding(
+            get: { filterExpanded.contains(node.url) },
+            set: { open in
+                if open { filterExpanded.insert(node.url) } else { filterExpanded.remove(node.url) }
+            }
+        )
+        return AnyView(
+            DisclosureGroup(isExpanded: isExpanded) {
+                ForEach(node.children ?? []) { filteredRow($0) }
+            } label: {
+                sidebarRow(node)
+            }
+        )
+    }
+
+    // MARK: - Filter
+
+    private struct FilterKey: Equatable {
+        let text: String
+        let generation: Int
+    }
+
+    /// Match the filter against names as the sidebar shows them (without a
+    /// Notion page's ID), ignoring case and diacritics, like Xcode's navigator.
+    /// Waits a moment first, so typing a word doesn't walk the tree per letter —
+    /// a keystroke in that time cancels this run and starts the next.
+    private func runFilter() async {
+        let query = filterText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            filteredNodes = nil
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !Task.isCancelled else { return }
+
+        let root = root
+        let hidesNotionIDs = hidesNotionIDs
+        let walk = Task.detached(priority: .userInitiated) {
+            FileNode.filterMatches(in: root) { url, isDirectory in
+                let name = hidesNotionIDs
+                    ? NotionExport.displayName(for: url, isDirectory: isDirectory)
+                    : url.lastPathComponent
+                return name.localizedStandardContains(query)
+            }
+        }
+        let matches = await withTaskCancellationHandler {
+            await walk.value
+        } onCancel: {
+            walk.cancel()
+        }
+        guard !Task.isCancelled else { return }
+        var expanded: Set<URL> = []
+        filteredNodes = FileNode.nodes(for: matches, expanded: &expanded)
+        filterExpanded = expanded
     }
 
     // MARK: - Toolbar
@@ -206,9 +292,18 @@ struct FolderBrowserView: View {
     /// level. Otherwise a new page needs a folder selected and goes into it,
     /// while a new folder goes into the selected folder or beside the selected
     /// file.
-    private var addBar: some View {
-        HStack {
-            Menu {
+    private var sidebarBar: some View {
+        HStack(spacing: 8) {
+            // An unpacked archive can't be added to — see `isReadOnly`.
+            if !isReadOnly { addMenu }
+            SidebarFilterField(text: $filterText)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private var addMenu: some View {
+        Menu {
                 Button("New Folder…") {
                     promptForNewFolder(in: selectedDirectory ?? root)
                 }
@@ -225,10 +320,6 @@ struct FolderBrowserView: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Add a folder or Markdown file")
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     /// The selected row, if it is a folder.
@@ -305,6 +396,7 @@ struct FolderBrowserView: View {
         for node in fresh where node.isDirectory {
             node.refresh()
         }
+        treeGeneration += 1
 
         // The file on screen may be the one that just disappeared.
         if let selectedURL, !FileManager.default.fileExists(atPath: selectedURL.path) {
@@ -873,6 +965,46 @@ private struct SidebarTableFinder: NSViewRepresentable {
             guard window != nil, catcher.table == nil else { return }
             catcher.table = sequence(first: self as NSView, next: \.superview)
                 .lazy.compactMap { $0 as? NSTableView }.first
+        }
+    }
+}
+
+/// The filter field in the sidebar's bottom bar: an `NSSearchField`, as in
+/// Xcode's navigator — with its clear button, Escape to clear, and the filter
+/// glyph in place of the magnifying glass. Reports every keystroke; the
+/// debouncing is the caller's.
+private struct SidebarFilterField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = "Filter"
+        field.sendsSearchStringImmediately = true
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.changed(_:))
+        if let cell = field.cell as? NSSearchFieldCell {
+            cell.searchButtonCell?.image = NSImage(
+                systemSymbolName: "line.3.horizontal.decrease.circle",
+                accessibilityDescription: "Filter"
+            )
+        }
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if field.stringValue != text { field.stringValue = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject {
+        var text: Binding<String>
+
+        init(text: Binding<String>) { self.text = text }
+
+        @objc func changed(_ sender: NSSearchField) {
+            text.wrappedValue = sender.stringValue
         }
     }
 }

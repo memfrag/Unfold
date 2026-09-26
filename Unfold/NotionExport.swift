@@ -10,7 +10,7 @@ import Foundation
 /// the link resolution in `Coordinator.openLocalLink` all go on working with
 /// what is actually on disk. `Rename…` is the one place both meet: it offers the
 /// short name and puts the ID back before saving.
-enum NotionExport {
+nonisolated enum NotionExport {
     /// Whether a folder looks like a Notion export, judged by sampling the
     /// Markdown files under it.
     ///

@@ -22,6 +22,14 @@ final class FileNode: Identifiable {
         self.isDirectory = isDirectory
     }
 
+    /// A directory whose children are already decided — a filtered tree's,
+    /// which shows only the matching part of what's on disk.
+    private init(directory url: URL, children: [FileNode]) {
+        self.url = url
+        self.isDirectory = true
+        self.loadedChildren = children
+    }
+
     var name: String { url.lastPathComponent }
 
     /// Lazily-loaded, filtered, sorted children. `nil` for files (a leaf row).
@@ -85,6 +93,12 @@ final class FileNode: Identifiable {
     // MARK: - Loading & filtering
 
     private static func loadChildren(of directory: URL) -> [FileNode] {
+        listing(of: directory).map { FileNode(url: $0.url, isDirectory: $0.isDirectory) }
+    }
+
+    /// What a directory shows, in order: filtered and sorted, but not yet
+    /// nodes — so it can be read off the main thread (the sidebar filter does).
+    nonisolated private static func listing(of directory: URL) -> [Entry] {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: directory,
@@ -92,18 +106,23 @@ final class FileNode: Identifiable {
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        var nodes: [FileNode] = []
+        var shown: [Entry] = []
         for entry in entries {
             let isDir = (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
             guard shouldShow(entry, isDirectory: isDir) else { continue }
-            nodes.append(FileNode(url: entry, isDirectory: isDir))
+            shown.append(Entry(url: entry, isDirectory: isDir))
         }
 
         // Directories first, then files; each group alphabetical, case-insensitive.
-        return nodes.sorted { a, b in
+        return shown.sorted { a, b in
             if a.isDirectory != b.isDirectory { return a.isDirectory }
-            return a.name.localizedStandardCompare(b.name) == .orderedAscending
+            return a.url.lastPathComponent.localizedStandardCompare(b.url.lastPathComponent) == .orderedAscending
         }
+    }
+
+    nonisolated struct Entry: Sendable {
+        let url: URL
+        let isDirectory: Bool
     }
 
     /// Directories with well-known build/VCS noise names are hidden, as are
@@ -114,7 +133,7 @@ final class FileNode: Identifiable {
     /// pages in, and hiding it would leave nothing to select and add them to.
     /// Files are only shown if the app can display them. (Dotfiles are already
     /// excluded by `.skipsHiddenFiles` at the enumeration step.)
-    private static func shouldShow(_ url: URL, isDirectory: Bool) -> Bool {
+    nonisolated private static func shouldShow(_ url: URL, isDirectory: Bool) -> Bool {
         if isDirectory {
             return !noiseDirectories.contains(url.lastPathComponent)
                 && (isEmptyDirectory(url) || containsViewableFile(url))
@@ -124,7 +143,7 @@ final class FileNode: Identifiable {
 
     /// Whether a directory has nothing in it but hidden files (a stray
     /// `.DS_Store` shouldn't make a new folder vanish).
-    private static func isEmptyDirectory(_ directory: URL) -> Bool {
+    nonisolated private static func isEmptyDirectory(_ directory: URL) -> Bool {
         let entries = try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil,
@@ -139,7 +158,7 @@ final class FileNode: Identifiable {
     /// a folder with its own pages in it — costs a single directory read.
     /// Symlinks are skipped rather than followed: one pointing at an ancestor
     /// would otherwise recurse forever.
-    private static func containsViewableFile(_ directory: URL) -> Bool {
+    nonisolated private static func containsViewableFile(_ directory: URL) -> Bool {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: directory,
@@ -165,23 +184,23 @@ final class FileNode: Identifiable {
     /// The one place that decides what counts as a Markdown file — the tree
     /// filter, the folder browser's selection, and link-following all share it.
     /// Markdown is the editable kind; HTML is only ever displayed.
-    static func isMarkdown(_ url: URL) -> Bool {
+    nonisolated static func isMarkdown(_ url: URL) -> Bool {
         markdownExtensions.contains(url.pathExtension.lowercased())
     }
 
-    static func isHTML(_ url: URL) -> Bool {
+    nonisolated static func isHTML(_ url: URL) -> Bool {
         htmlExtensions.contains(url.pathExtension.lowercased())
     }
 
     /// Whether the app can show this file at all.
-    static func isViewable(_ url: URL) -> Bool {
+    nonisolated static func isViewable(_ url: URL) -> Bool {
         isMarkdown(url) || isHTML(url)
     }
 
-    private static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd"]
-    private static let htmlExtensions: Set<String> = ["html", "htm"]
+    nonisolated private static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd"]
+    nonisolated private static let htmlExtensions: Set<String> = ["html", "htm"]
 
-    private static let noiseDirectories: Set<String> = [
+    nonisolated private static let noiseDirectories: Set<String> = [
         ".git", ".svn", ".hg",
         "node_modules", ".build", "build", "DerivedData",
         "Pods", ".swiftpm", ".venv", "venv", "__pycache__",
@@ -190,6 +209,60 @@ final class FileNode: Identifiable {
 }
 
 extension FileNode {
+    /// One match of the sidebar filter. `children` is nil for a file, and for a
+    /// folder kept only because its own name matched — that one stays an
+    /// ordinary lazy node, contents and all.
+    nonisolated struct FilterMatch: Sendable {
+        let url: URL
+        let isDirectory: Bool
+        let children: [FilterMatch]?
+    }
+
+    /// The sidebar's filter: the part of the tree under `directory` whose names
+    /// `matches` accepts, read from disk rather than from what has been loaded,
+    /// since the match may be in a folder nobody has opened.
+    ///
+    /// A matching file is kept on its own. A folder with matches beneath it holds
+    /// just those, whatever its own name — so a `Headless` folder filtered on
+    /// "headless" opens onto its `headless.md` rather than hiding it. A folder
+    /// whose name matches but whose contents don't is kept whole.
+    ///
+    /// Slow on a large tree, so it's made to run off the main thread, and gives
+    /// up as soon as its task is cancelled (the filter text changed again).
+    nonisolated static func filterMatches(
+        in directory: URL,
+        matching matches: (URL, _ isDirectory: Bool) -> Bool
+    ) -> [FilterMatch] {
+        var result: [FilterMatch] = []
+        for entry in listing(of: directory) {
+            if Task.isCancelled { return [] }
+            if entry.isDirectory {
+                let inner = filterMatches(in: entry.url, matching: matches)
+                if !inner.isEmpty {
+                    result.append(FilterMatch(url: entry.url, isDirectory: true, children: inner))
+                } else if matches(entry.url, true) {
+                    result.append(FilterMatch(url: entry.url, isDirectory: true, children: nil))
+                }
+            } else if matches(entry.url, false) {
+                result.append(FilterMatch(url: entry.url, isDirectory: false, children: nil))
+            }
+        }
+        return result
+    }
+
+    /// Turn filter matches into nodes for the sidebar. `expanded` collects the
+    /// folders holding matches, since showing those is the point; a folder kept
+    /// only for its name stays closed.
+    static func nodes(for matches: [FilterMatch], expanded: inout Set<URL>) -> [FileNode] {
+        matches.map { match in
+            guard let children = match.children else {
+                return FileNode(url: match.url, isDirectory: match.isDirectory)
+            }
+            expanded.insert(match.url)
+            return FileNode(directory: match.url, children: nodes(for: children, expanded: &expanded))
+        }
+    }
+
     /// Convenience: build the top-level nodes for a dropped folder. The folder's
     /// *contents* appear at the top level (the folder itself is not shown as a
     /// single root row).
