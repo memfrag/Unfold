@@ -33,12 +33,6 @@ final class FileNode: Identifiable {
         return loaded
     }
 
-    /// Discard cached children so the next access re-reads from disk. Used after
-    /// a file operation (new file, rename, trash) changes a directory's contents.
-    func reload() {
-        loadedChildren = nil
-    }
-
     /// Re-read every directory that has been loaded and reconcile it with what
     /// is on screen, so files added or removed by something outside the app show
     /// up. Directories nobody has expanded are left alone — they are still lazy,
@@ -115,14 +109,28 @@ final class FileNode: Identifiable {
     /// Directories with well-known build/VCS noise names are hidden, as are
     /// directories with nothing viewable anywhere beneath them — a folder
     /// holding nothing but a page's images (what a Notion export is largely made
-    /// of) is an empty row in a document browser. Files are only shown if the app
-    /// can display them. (Dotfiles are already excluded by `.skipsHiddenFiles` at
-    /// the enumeration step.)
+    /// of) is an empty row in a document browser. A directory that is empty
+    /// outright is the exception: that is a folder someone has just made to put
+    /// pages in, and hiding it would leave nothing to select and add them to.
+    /// Files are only shown if the app can display them. (Dotfiles are already
+    /// excluded by `.skipsHiddenFiles` at the enumeration step.)
     private static func shouldShow(_ url: URL, isDirectory: Bool) -> Bool {
         if isDirectory {
-            return !noiseDirectories.contains(url.lastPathComponent) && containsViewableFile(url)
+            return !noiseDirectories.contains(url.lastPathComponent)
+                && (isEmptyDirectory(url) || containsViewableFile(url))
         }
         return isViewable(url)
+    }
+
+    /// Whether a directory has nothing in it but hidden files (a stray
+    /// `.DS_Store` shouldn't make a new folder vanish).
+    private static func isEmptyDirectory(_ directory: URL) -> Bool {
+        let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        return entries?.isEmpty ?? false
     }
 
     /// Whether any file the app can display lives in this directory or below it.
