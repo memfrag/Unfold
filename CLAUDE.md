@@ -120,6 +120,15 @@ Two shapes real exports come in, both handled in `unpack`: Notion's outer zip co
 
 `HeadingItem.swift` turns the flat heading list (sent from JS) into a nested tree (`buildHeadingTree`) for the inspector sidebar in `ContentView`. `preserveExpansionState` keeps disclosure-group open/closed state across reloads. Heading slugs must match between Swift and JS — both derive them from heading text, but the authoritative slugs are generated in JS (`renderer.heading`) and sent over, so the sidebar links resolve correctly even with duplicate headings.
 
+### Find
+
+Edit ▸ Find (Cmd+F, Cmd+G / Cmd+Shift+G) searches the page with a bar of our own (`FindBar`) over the web view, plus a script (`FindInPage`) that runs inside it. AppKit's stock find bar is **not** an option for the preview: `WKWebView` doesn't respond to `performTextFinderAction:` (sending it crashes), and its only public find API selects one match at a time, with no count and no highlight-all. The source editor *does* use the stock bar (`usesFindBar`). `NavigationState.find(_:)` sends the command there while the editor or its bar has focus, and to the page otherwise.
+
+- The script is a `WKUserScript` installed into both web views, so it covers Markdown and HTML pages alike. It searches all text nodes as one string, so a match can run across highlight.js spans. It paints matches with the CSS Custom Highlight API rather than `<mark>`, which leaves the DOM (and `data-line`) untouched, and it reports `{count, current}` over the `findResult` message handler.
+- `NavigationState.findTarget` is the web view on screen, set in each `makeNSView`. Results from any other web view are ignored, since an outgoing page can still report.
+- `_render` calls `_unfoldFind.refresh()` so live edits keep the search current. A newly loaded page re-runs the search through `findTargetDidLoad`.
+- SwiftUI's Edit menu has no Find items, so `UnfoldApp` adds them. Use Selection for Find has no shortcut because Cmd+E is Export PDF.
+
 ### Commands & menus
 
 `UnfoldApp` wires menu commands. Export PDF (Cmd+E), Print (Cmd+P), reload (Cmd+R), Show/Hide Editor (Cmd+Shift+E), appearance toggle, and TOC toggle are driven through `NavigationState` / its `coordinator` (a `@FocusedValue`). Back/forward (Cmd+[ / Cmd+]) are a **Go** menu rather than shortcuts on the toolbar buttons (`BackForwardButtons`, shared by both windows) — on the buttons they only fired in whichever window declared them, so the folder browser never got them. The shared `@Observable NavigationState` (notably `isEditing`) ties the menu/toolbar toggles, the split layout, and the coordinator together. File > New (Cmd+N) creates a blank untitled document. PDF export forces light appearance temporarily for legible output. `CLIInstaller` offers a copyable `sudo cp` command to install the bundled `unfold` CLI shim (`Unfold/Resources/unfold`) into `/usr/local/bin`.

@@ -36,6 +36,7 @@ struct HTMLWebView: NSViewRepresentable {
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: true
         ))
+        FindInPage.install(in: config, navigationState: navigationState)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -47,6 +48,7 @@ struct HTMLWebView: NSViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.navigationState = navigationState
+        navigationState.findTarget = webView
         context.coordinator.show(fileURL, in: webView, readAccessRoot: readAccessRoot)
         return webView
     }
@@ -125,6 +127,7 @@ struct HTMLWebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            navigationState?.findTargetDidLoad(webView)
             // A history move parks the offset until the file it belongs to is on
             // screen; keyed by URL, so the page being left can't consume it.
             guard let pending = navigationState?.pendingScroll, pending.url == fileURL else { return }

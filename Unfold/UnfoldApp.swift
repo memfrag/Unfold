@@ -43,6 +43,32 @@ struct UnfoldApp: App {
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
 
+            // SwiftUI's Edit menu has no Find items of its own. Use Selection
+            // for Find goes without its usual Cmd+E, which is Export PDF here.
+            CommandGroup(after: .textEditing) {
+                Menu("Find") {
+                    Button("Find…") {
+                        navigationState?.find(.showFindInterface)
+                    }
+                    .keyboardShortcut("f", modifiers: .command)
+
+                    Button("Find Next") {
+                        navigationState?.find(.nextMatch)
+                    }
+                    .keyboardShortcut("g", modifiers: .command)
+
+                    Button("Find Previous") {
+                        navigationState?.find(.previousMatch)
+                    }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+
+                    Button("Use Selection for Find") {
+                        navigationState?.find(.setSearchString)
+                    }
+                }
+                .disabled(navigationState == nil)
+            }
+
             CommandMenu("Go") {
                 Button("Back") {
                     navigationState?.goBack()

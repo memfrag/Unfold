@@ -35,6 +35,8 @@ struct MarkdownTextView: NSViewRepresentable {
         textView.isAutomaticLinkDetectionEnabled = false
         textView.isRichText = false
         textView.allowsUndo = true
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
         textView.font = Self.editorFont
         textView.textContainerInset = NSSize(width: 8, height: 12)
 

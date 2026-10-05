@@ -30,6 +30,7 @@ struct ContentView: View {
                 navigationState: navigationState
             )
             .frame(minWidth: 320, idealWidth: 600, maxWidth: .infinity)
+            .findBar(navigationState)
             .id("preview")
         }
         .inspector(isPresented: $showInspector) {

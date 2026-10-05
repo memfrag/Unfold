@@ -122,6 +122,9 @@ struct FolderBrowserView: View {
                     )
                 }
             }
+            // Over the whole detail, not each web view, so it stays put (and
+            // keeps its query) going from page to page.
+            .findBar(navigationState)
         }
         .inspector(isPresented: $showTOC) {
             TOCSidebar(navigationState: navigationState)

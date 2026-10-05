@@ -66,6 +66,145 @@ class NavigationState {
     /// View ▸ Refresh Folder command keys its availability off.
     var refreshTree: (() -> Void)?
 
+    /// The web view on screen, set by whichever kind (Markdown or HTML) the
+    /// window is showing. Find goes here unless the source editor has focus.
+    weak var findTarget: WKWebView?
+
+    // MARK: - Find
+
+    var isFinding = false
+    var findQuery = ""
+    var findMatchCount = 0
+    /// Zero-based; -1 while there is no match.
+    var findCurrentMatch = -1
+    /// Bumped when Cmd+F is pressed with the bar already open, to put focus
+    /// back in its field.
+    var findFocusRequest = 0
+    /// Measured by the bar, so the page knows how far to move down for it.
+    var findBarHeight: CGFloat = 0
+
+    /// The Edit ▸ Find commands. While the source editor (or its own find bar)
+    /// has focus they go to it, and AppKit's find bar searches the Markdown, as
+    /// in any text editor. Otherwise they search the page through `FindBar` and
+    /// `FindInPage`, whatever has focus — a freshly opened window has nothing
+    /// focused, and Cmd+F should still search what's on screen.
+    func find(_ action: NSTextFinder.Action) {
+        if let editor = Self.focusedSourceEditor() {
+            let sender = NSMenuItem()
+            sender.tag = action.rawValue
+            editor.performTextFinderAction(sender)
+            return
+        }
+        switch action {
+        case .showFindInterface: showFindBar()
+        case .nextMatch: stepFind(1)
+        case .previousMatch: stepFind(-1)
+        case .setSearchString: useSelectionForFind()
+        default: break
+        }
+    }
+
+    func showFindBar() {
+        isFinding = true
+        findFocusRequest += 1
+        if !findQuery.isEmpty { searchFind() }
+    }
+
+    func hideFindBar() {
+        isFinding = false
+        findMatchCount = 0
+        findCurrentMatch = -1
+        findTarget?.evaluateJavaScript("window._unfoldFind && window._unfoldFind.clear()")
+        applyFindInset(animated: true)
+        if let findTarget { findTarget.window?.makeFirstResponder(findTarget) }
+    }
+
+    /// Move the page down to clear the bar (which floats over it), or back up.
+    func applyFindInset(animated: Bool) {
+        let inset = isFinding ? Double(findBarHeight) : 0
+        findTarget?.evaluateJavaScript(
+            "window._unfoldFind && window._unfoldFind.setInset(\(inset), \(animated))"
+        )
+    }
+
+    /// Search the page for `findQuery` from the top of what's on screen.
+    /// Never while the bar is closed: highlights with no bar to dismiss them
+    /// would be stuck on the page.
+    func searchFind() {
+        guard let findTarget, isFinding else { return }
+        guard !findQuery.isEmpty else {
+            findMatchCount = 0
+            findCurrentMatch = -1
+            findTarget.evaluateJavaScript("window._unfoldFind && window._unfoldFind.clear()")
+            return
+        }
+        findTarget.callAsyncJavaScript(
+            "window._unfoldFind && window._unfoldFind.search(q)",
+            arguments: ["q": findQuery],
+            in: nil,
+            in: .page,
+            completionHandler: nil
+        )
+    }
+
+    /// Find Next / Previous. With the bar closed but a query left over they
+    /// reopen it and search again, as Safari does; with no query they just
+    /// open it.
+    func stepFind(_ delta: Int) {
+        guard !findQuery.isEmpty else {
+            showFindBar()
+            return
+        }
+        guard isFinding else {
+            isFinding = true
+            searchFind()
+            return
+        }
+        findTarget?.evaluateJavaScript("window._unfoldFind && window._unfoldFind.step(\(delta))")
+    }
+
+    private func useSelectionForFind() {
+        findTarget?.evaluateJavaScript("window.getSelection().toString()") { [weak self] result, _ in
+            guard let self, let text = result as? String, !text.isEmpty else { return }
+            findQuery = text
+            isFinding = true
+            searchFind()
+        }
+    }
+
+    /// A page finished loading (or the Markdown its first render), so a bar
+    /// left open from the previous page gets its room on this one, and its
+    /// search is run again.
+    func findTargetDidLoad(_ webView: WKWebView) {
+        guard webView === findTarget, isFinding else { return }
+        applyFindInset(animated: false)
+        if !findQuery.isEmpty { searchFind() }
+    }
+
+    /// The source editor, if focus is in it or in the find bar above it. The
+    /// find bar's search field is edited through the window's field editor —
+    /// itself an `NSTextView`, which must not be mistaken for the editor — so
+    /// its containing scroll view is what identifies the editor it belongs to.
+    private static func focusedSourceEditor() -> NSTextView? {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return nil }
+        var view: NSView?
+        if let textView = responder as? NSTextView, textView.isFieldEditor {
+            view = textView.delegate as? NSView
+        } else {
+            view = responder as? NSView
+        }
+        while let current = view {
+            if current is WKWebView { return nil }
+            if let scrollView = current as? NSScrollView,
+               let textView = scrollView.documentView as? NSTextView,
+               textView.usesFindBar {
+                return textView
+            }
+            view = current.superview
+        }
+        return nil
+    }
+
     /// Open a Markdown file in a document window of its own — the fallback when
     /// the current window can't show it itself.
     static func openInNewWindow(_ url: URL) {
@@ -221,6 +360,7 @@ struct MarkdownWebView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "scrollState")
         config.userContentController.add(context.coordinator, name: "historyPush")
         config.userContentController.add(context.coordinator, name: "openLink")
+        FindInPage.install(in: config, navigationState: navigationState)
         let baseDir = fileURL?.deletingLastPathComponent()
         let schemeHandler = LocalResourceSchemeHandler(baseDirectory: baseDir)
         config.setURLSchemeHandler(schemeHandler, forURLScheme: "unfold-resource")
@@ -234,6 +374,7 @@ struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.navigationState = navigationState
         navigationState.coordinator = context.coordinator
+        navigationState.findTarget = webView
         context.coordinator.fileURL = fileURL
         context.coordinator.lastMarkdown = markdown
         context.coordinator.loadShell(in: webView)
@@ -438,9 +579,19 @@ struct MarkdownWebView: NSViewRepresentable {
                 arguments: ["md": markdown],
                 in: nil,
                 in: .page,
-                completionHandler: { [weak self] _ in self?.restorePendingScroll() }
+                completionHandler: { [weak self] _ in
+                    guard let self else { return }
+                    restorePendingScroll()
+                    // Later renders keep a search current from inside `_render`.
+                    if !hasRendered {
+                        hasRendered = true
+                        navigationState?.findTargetDidLoad(webView)
+                    }
+                }
             )
         }
+
+        private var hasRendered = false
 
         /// A history move sets the scroll position aside until the file it
         /// belongs to has been rendered — there is nothing to scroll before that.

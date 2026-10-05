@@ -423,6 +423,9 @@ func buildHTML() -> String {
             }
 
             window.scrollTo(0, y);
+
+            // The ranges an open search highlighted belonged to the old #content.
+            if (window._unfoldFind) window._unfoldFind.refresh();
         };
 
         // Scroll the block at/above the given source line into view, but only
