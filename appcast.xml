@@ -3,6 +3,15 @@
     <channel>
         <title>Unfold</title>
         <item>
+            <title>1.11.0</title>
+            <pubDate>Mon, 05 Oct 2026 21:18:58 +0200</pubDate>
+            <sparkle:version>1.11.0</sparkle:version>
+            <sparkle:shortVersionString>1.11.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.11.0/Unfold-1.11.0.dmg" length="4386335" type="application/octet-stream" sparkle:edSignature="dp6y9x8IAVE5DdRu62MM20l74BWfmqRGnuQlRmtbFeBAlJ3jKcXyvlKDRCfHqMMt91MLwUI5btj2N95S4kvjCQ=="/>
+        </item>
+        <item>
             <title>1.10.0</title>
             <pubDate>Sat, 26 Sep 2026 13:43:12 +0200</pubDate>
             <sparkle:version>1.10.0</sparkle:version>
@@ -19,15 +28,6 @@
             <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.9.0/Unfold-1.9.0.dmg" length="4249459" type="application/octet-stream" sparkle:edSignature="VvWundAx515n34tTZr9oJ4sznp2xi9Q23yrpc+a2+nhbILQNMe+CDdz+6onwFVkLGsJ+jI4AmepTiIt5X/zoDg=="/>
-        </item>
-        <item>
-            <title>1.8.0</title>
-            <pubDate>Tue, 11 Aug 2026 13:39:03 +0200</pubDate>
-            <sparkle:version>1.8.0</sparkle:version>
-            <sparkle:shortVersionString>1.8.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.8.0/Unfold-1.8.0.dmg" length="4243950" type="application/octet-stream" sparkle:edSignature="EiyMjtj4n9nFQwLE//JaQpOwycOXUqaptM8+RTUeQLd9JX2/FN6LlYF6qLD8NTtlZ+s1yP5h3tfikEtom5nhBA=="/>
         </item>
     </channel>
 </rss>
