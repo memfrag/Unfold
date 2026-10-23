@@ -21,12 +21,21 @@ The rendering pipeline is the core of the app and spans Swift ↔ JavaScript:
 2. **`HTMLTemplate.swift` / `buildHTML()`** produces a self-contained HTML **shell** with an empty `#content`. `marked.min.js` + `highlight.min.js` + the two highlight CSS themes are inlined from `Unfold/Resources/`. The Markdown is **not** embedded in the page — instead the script defines `window._render(md)`, which parses the Markdown into `#content`, highlights code, wires copy buttons, extracts the TOC, tags each top-level block with a `data-line` source-line attribute, and preserves scroll. One-time setup (link/scroll/mousemove listeners, `_goBack`/`_goForward`/`_scrollToHeading`, `_syncToLine`, link-preview, scroll history) lives outside `_render`.
 3. **`MarkdownWebView`** (`NSViewRepresentable`) hosts the `WKWebView` and owns the bridge. The initial render is driven from `webView(_:didFinish:)`; live edits re-render in place (debounced ~1s) without reloading the page.
 
+### Mermaid diagrams
+
+A ` ```mermaid ` fence is emitted by `renderer.code` as an empty `div.mermaid-diagram` carrying its source in `data-source` (so `hljs` and the Copy button skip it, and `data-line` still lands on it). `mermaid.min.js` is ~3.5 MB, so unlike marked/highlight.js it is **not** inlined: a page that has a diagram fetches it once from `unfold-resource://bundle/mermaid.min.js`, which `LocalResourceSchemeHandler` serves from an allow-list.
+
+- Every diagram is rendered **twice**, light and dark, and CSS picks one by `prefers-color-scheme` (with `@media print` forcing light) — the same trick as the two highlight.js themes, so the appearance toggle, Print and Export PDF need no re-render. Mermaid's theme is global config, so renders are serialized through a queue.
+- Some Mermaid ids are fixed (`#arrowhead`, `#drop-shadow`) and `url(#…)` binds to the first in the document — the hidden copy, often. `uniquifyIds` suffixes every id but the SVG root's and rewrites the references.
+- Rendered pairs are cached by source, so a re-render while typing refills unchanged diagrams synchronously; a generation counter drops a stale async pass.
+- `_render` therefore returns a Promise, and `renderNow()` runs `await window._render(md)` so `restorePendingScroll()` happens once diagrams have their real height.
+
 ### The Swift ↔ JS bridge
 
 This is the part that requires reading multiple files together. Communication is bidirectional:
 
 - **JS → Swift** via four `WKScriptMessage` handlers registered in `makeNSView` and handled in `Coordinator.userContentController`: `tocData` (flat heading list), `scrollState` (scroll offset + scroll-spy current heading), `historyPush` (the page jumped to an anchor), `openLink` (a clicked link to a path on disk).
-- **Swift → JS** via two mechanisms: `evaluateJavaScript` for `window._scrollToHeading(slug)` and `window.scrollTo`, and `callAsyncJavaScript` for `window._render(md)` and `window._syncToLine(line)` — passing the Markdown/line as a real JS argument avoids all string-escaping concerns (there is no longer any `escapeForJSTemplateLiteral`).
+- **Swift → JS** via two mechanisms: `evaluateJavaScript` for `window._scrollToHeading(slug)` and `window.scrollTo`, and `callAsyncJavaScript` for `window._render(md)` (awaited; it returns a Promise) and `window._syncToLine(line)` — passing the Markdown/line as a real JS argument avoids all string-escaping concerns (there is no longer any `escapeForJSTemplateLiteral`).
 - `suppressScrollTracking` guards against the scroll-spy fighting a programmatic `scrollToHeading`.
 
 ### Navigation history

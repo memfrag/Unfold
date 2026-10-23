@@ -575,7 +575,9 @@ struct MarkdownWebView: NSViewRepresentable {
             renderWorkItem = nil
             guard isPageLoaded, let webView, let markdown = lastMarkdown else { return }
             webView.callAsyncJavaScript(
-                "window._render(md)",
+                // Awaited so the completion runs once diagrams have their
+                // real height — a restored scroll offset would clamp otherwise.
+                "await window._render(md)",
                 arguments: ["md": markdown],
                 in: nil,
                 in: .page,
@@ -711,6 +713,9 @@ struct MarkdownWebView: NSViewRepresentable {
 }
 
 class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
+    /// The bundle files `unfold-resource://bundle/<name>` may serve.
+    private static let bundleScripts: Set<String> = ["mermaid.min.js"]
+
     let baseDirectory: URL?
     var pendingHTML: String?
 
@@ -735,6 +740,31 @@ class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
                 statusCode: 200,
                 httpVersion: nil,
                 headerFields: ["Content-Type": "text/html; charset=utf-8"]
+            )!
+            urlSchemeTask.didReceive(response)
+            urlSchemeTask.didReceive(data)
+            urlSchemeTask.didFinish()
+            return
+        }
+
+        // Serve a script from the app bundle that is too large to inline into
+        // the shell, fetched only by pages that need it (Mermaid).
+        if url.host == "bundle" {
+            let name = String(url.path.dropFirst())
+            guard Self.bundleScripts.contains(name),
+                  let fileURL = Bundle.main.resourceURL?.appendingPathComponent(name),
+                  let data = try? Data(contentsOf: fileURL) else {
+                urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+                return
+            }
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: [
+                    "Content-Type": "text/javascript; charset=utf-8",
+                    "Content-Length": "\(data.count)"
+                ]
             )!
             urlSchemeTask.didReceive(response)
             urlSchemeTask.didReceive(data)

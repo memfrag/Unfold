@@ -38,6 +38,7 @@ func buildHTML() -> String {
         --blockquote-bg: #f5f5f7;
         --table-header-bg: #f5f5f7;
         --table-border: #d2d2d7;
+        --error: #d70015;
     }
 
     @media (prefers-color-scheme: dark) {
@@ -53,6 +54,7 @@ func buildHTML() -> String {
             --blockquote-bg: #2c2c2e;
             --table-header-bg: #2c2c2e;
             --table-border: #424245;
+            --error: #ff6961;
         }
     }
 
@@ -295,6 +297,45 @@ func buildHTML() -> String {
         border-width: 0 1.5px 1.5px 0;
         transform: translate(-50%, -55%) rotate(45deg);
     }
+
+    /* Each diagram is drawn in both themes; the scheme picks one, as it does
+       for the highlight.js themes below. */
+    .mermaid-diagram {
+        margin: 1em 0;
+        text-align: center;
+        overflow-x: auto;
+    }
+
+    .mermaid-dark { display: none; }
+
+    @media (prefers-color-scheme: dark) {
+        .mermaid-light { display: none; }
+        .mermaid-dark { display: block; }
+    }
+
+    .mermaid-error {
+        text-align: left;
+        background: var(--code-bg);
+        border-left: 3px solid var(--error);
+        border-radius: 0 6px 6px 0;
+        padding: 0.75em 1em;
+        font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+        font-size: 0.8em;
+        line-height: 1.45;
+    }
+
+    .mermaid-error-message {
+        color: var(--error);
+        white-space: pre-wrap;
+        margin-bottom: 0.75em;
+    }
+
+    .mermaid-error-source {
+        color: var(--fg-secondary);
+        white-space: pre;
+        overflow-x: auto;
+    }
+
     @media print {
         :root {
             --bg: #ffffff;
@@ -308,11 +349,14 @@ func buildHTML() -> String {
             --blockquote-bg: #f5f5f7;
             --table-header-bg: #f5f5f7;
             --table-border: #d2d2d7;
+            --error: #d70015;
         }
         body { padding: 0; }
         .copy-btn { display: none !important; }
         #link-preview { display: none !important; }
-        pre, li, blockquote { break-inside: avoid; }
+        .mermaid-light { display: block !important; }
+        .mermaid-dark { display: none !important; }
+        pre, li, blockquote, .mermaid-diagram { break-inside: avoid; }
         h1, h2, h3, h4, h5, h6 { break-after: avoid; }
     }
     </style>
@@ -362,13 +406,168 @@ func buildHTML() -> String {
                 html += '>';
                 return html;
             };
+            // A mermaid fence becomes an empty placeholder carrying its source;
+            // the diagram is drawn into it after the page is parsed.
+            var defaultCode = renderer.code;
+            renderer.code = function(token) {
+                if ((token.lang || '').trim().split(' ')[0] === 'mermaid') {
+                    return '<div class="mermaid-diagram" data-source="' + escapeHTML(token.text) + '"></div>';
+                }
+                return defaultCode.call(this, token);
+            };
             return renderer;
         }
 
+        function escapeHTML(s) {
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // ---- Mermaid ----
+        // The library is ~3.5 MB, so it isn't inlined into this shell like
+        // marked and highlight.js: a page fetches it the first time it has a
+        // diagram to draw.
+        var mermaidReady = null;
+        function loadMermaid() {
+            if (!mermaidReady) {
+                mermaidReady = new Promise(function(resolve, reject) {
+                    var script = document.createElement('script');
+                    script.src = 'unfold-resource://bundle/mermaid.min.js';
+                    script.onload = function() { resolve(window.mermaid); };
+                    script.onerror = function() {
+                        mermaidReady = null;
+                        reject(new Error('The Mermaid library could not be loaded.'));
+                    };
+                    document.head.appendChild(script);
+                });
+            }
+            return mermaidReady;
+        }
+
+        // Rendered diagrams by source, so a re-render while typing elsewhere
+        // refills them at once instead of blanking and redrawing each one.
+        var diagramCache = new Map();
+        var diagramCount = 0;
+
+        // The theme is global Mermaid config, so renders must not interleave:
+        // each waits for the one before it.
+        var mermaidQueue = Promise.resolve();
+        function renderDiagram(mermaid, source) {
+            var job = mermaidQueue.then(async function() {
+                var fontFamily = getComputedStyle(document.body).fontFamily;
+                var entry = {};
+                var variants = [['light', 'default'], ['dark', 'dark']];
+                for (var i = 0; i < variants.length; i++) {
+                    mermaid.initialize({
+                        startOnLoad: false,
+                        securityLevel: 'strict',
+                        suppressErrorRendering: true,
+                        theme: variants[i][1],
+                        fontFamily: fontFamily,
+                        themeVariables: { fontFamily: fontFamily }
+                    });
+                    var id = 'unfold-mermaid-' + (++diagramCount);
+                    try {
+                        var result = await mermaid.render(id, source);
+                        entry[variants[i][0]] = uniquifyIds(result.svg, id);
+                    } catch (e) {
+                        return { error: (e && e.message) || String(e) };
+                    }
+                }
+                return entry;
+            });
+            mermaidQueue = job.catch(function() {});
+            return job;
+        }
+
+        // Some of Mermaid's ids are fixed (#arrowhead, #drop-shadow), and
+        // url(#…) resolves to the first match in the document — with a light
+        // and a dark copy of every diagram on the page, often the hidden one.
+        // Suffix every id but the root's (already unique, and what the
+        // diagram's own stylesheet is scoped to) and rewrite references.
+        function uniquifyIds(svg, rootId) {
+            var template = document.createElement('template');
+            template.innerHTML = svg;
+            var renamed = {};
+            template.content.querySelectorAll('[id]').forEach(function(el) {
+                if (el.id === rootId) return;
+                renamed[el.id] = el.id + '--' + rootId;
+                el.id = renamed[el.id];
+            });
+            template.content.querySelectorAll('*').forEach(function(el) {
+                for (var i = 0; i < el.attributes.length; i++) {
+                    var attr = el.attributes[i];
+                    var value = attr.value.replace(/url\\((['"]?)#([^)'"]+)\\1\\)/g, function(m, q, id) {
+                        return renamed[id] ? 'url(' + q + '#' + renamed[id] + q + ')' : m;
+                    });
+                    if (value.charAt(0) === '#' && renamed[value.substring(1)]) {
+                        value = '#' + renamed[value.substring(1)];
+                    } else if (attr.name.indexOf('aria-') === 0) {
+                        value = value.split(' ').map(function(t) { return renamed[t] || t; }).join(' ');
+                    }
+                    if (value !== attr.value) attr.value = value;
+                }
+            });
+            return template.innerHTML;
+        }
+
+        function fillDiagram(el, entry) {
+            if (entry.error) {
+                el.innerHTML = '<div class="mermaid-error">'
+                    + '<div class="mermaid-error-message">' + escapeHTML(entry.error) + '</div>'
+                    + '<div class="mermaid-error-source">' + escapeHTML(el.getAttribute('data-source')) + '</div>'
+                    + '</div>';
+            } else {
+                el.innerHTML = '<div class="mermaid-light">' + entry.light + '</div>'
+                    + '<div class="mermaid-dark">' + entry.dark + '</div>';
+            }
+        }
+
+        // Fills every diagram already in the cache and returns the rest.
+        function fillCachedDiagrams() {
+            var pending = [];
+            var seen = new Set();
+            contentEl.querySelectorAll('.mermaid-diagram').forEach(function(el) {
+                var source = el.getAttribute('data-source');
+                seen.add(source);
+                var entry = diagramCache.get(source);
+                if (entry) fillDiagram(el, entry); else pending.push(el);
+            });
+            diagramCache.forEach(function(_, source) {
+                if (!seen.has(source)) diagramCache.delete(source);
+            });
+            return pending;
+        }
+
+        async function renderPendingDiagrams(els, generation) {
+            var mermaid;
+            try {
+                mermaid = await loadMermaid();
+            } catch (e) {
+                els.forEach(function(el) { fillDiagram(el, { error: e.message }); });
+                return;
+            }
+            for (var i = 0; i < els.length; i++) {
+                if (generation !== renderGeneration) return;
+                var source = els[i].getAttribute('data-source');
+                var entry = diagramCache.get(source);
+                if (!entry) {
+                    entry = await renderDiagram(mermaid, source);
+                    if (generation !== renderGeneration) return;
+                    diagramCache.set(source, entry);
+                }
+                fillDiagram(els[i], entry);
+            }
+        }
+
+        var renderGeneration = 0;
+
         // Render Markdown into #content, tagging each top-level block element
         // with its 0-based source line (data-line) for editor->preview sync.
-        // Preserves scroll position across re-renders.
+        // Preserves scroll position across re-renders. Returns a Promise that
+        // settles once any diagrams not yet in the cache have been drawn.
         window._render = function(md) {
+            var generation = ++renderGeneration;
             var y = window.scrollY;
             var renderer = buildRenderer();
             marked.setOptions({ gfm: true, breaks: false, renderer: renderer });
@@ -389,6 +588,7 @@ func buildHTML() -> String {
                 html += piece;
             }
             contentEl.innerHTML = html;
+            var pendingDiagrams = fillCachedDiagrams();
 
             hljs.highlightAll();
 
@@ -426,6 +626,16 @@ func buildHTML() -> String {
 
             // The ranges an open search highlighted belonged to the old #content.
             if (window._unfoldFind) window._unfoldFind.refresh();
+
+            if (pendingDiagrams.length === 0) return Promise.resolve();
+            // Until they're drawn the page is shorter, so the offset may have
+            // been clamped; put it back unless the reader has scrolled since.
+            var settledY = window.scrollY;
+            return renderPendingDiagrams(pendingDiagrams, generation).then(function() {
+                if (generation !== renderGeneration) return;
+                if (window.scrollY === settledY) window.scrollTo(0, y);
+                if (window._unfoldFind) window._unfoldFind.refresh();
+            });
         };
 
         // Scroll the block at/above the given source line into view, but only

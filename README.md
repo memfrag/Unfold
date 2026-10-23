@@ -6,6 +6,7 @@ A lightweight Markdown viewer for macOS built with SwiftUI and WKWebView.
 
 - Renders GitHub-flavored Markdown with full styling
 - Syntax highlighting for 190+ languages via highlight.js
+- Mermaid diagrams in ` ```mermaid ` code blocks
 - Dark and light mode support (follows system appearance)
 - Copy button on code blocks
 - Link hover preview
@@ -25,6 +26,7 @@ Unfold bundles the following libraries:
 
 - [marked](https://github.com/markedjs/marked) v15.0.12 — Markdown parser (MIT License)
 - [highlight.js](https://github.com/highlightjs/highlight.js) v11.11.1 — Syntax highlighter (BSD 3-Clause License)
+- [Mermaid](https://github.com/mermaid-js/mermaid) v11.17.2 — Diagrams from text (MIT License)
 
 ## License
 
