@@ -3,6 +3,15 @@
     <channel>
         <title>Unfold</title>
         <item>
+            <title>1.12.0</title>
+            <pubDate>Fri, 23 Oct 2026 19:27:02 +0200</pubDate>
+            <sparkle:version>1.12.0</sparkle:version>
+            <sparkle:shortVersionString>1.12.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.12.0/Unfold-1.12.0.dmg" length="5984361" type="application/octet-stream" sparkle:edSignature="GR7FqwnV29/1pHW4HNDmJr+YtyjzyWzDJuhsQH06z6cwY5N+T886TGf+xrWSTCtp973Gqdqb7xVipbqPS8lPBQ=="/>
+        </item>
+        <item>
             <title>1.11.0</title>
             <pubDate>Mon, 05 Oct 2026 21:18:58 +0200</pubDate>
             <sparkle:version>1.11.0</sparkle:version>
@@ -19,15 +28,6 @@
             <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.10.0/Unfold-1.10.0.dmg" length="4358228" type="application/octet-stream" sparkle:edSignature="yhHoPo8RwRVB28INoup3Fpo0Ryu6RyLZQil9+3S9ePXnTQ+KivvLnoSiNoD540b01pejZqFShhBpnsMGk4xNBQ=="/>
-        </item>
-        <item>
-            <title>1.9.0</title>
-            <pubDate>Sun, 16 Aug 2026 16:14:51 +0200</pubDate>
-            <sparkle:version>1.9.0</sparkle:version>
-            <sparkle:shortVersionString>1.9.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.3</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/memfrag/Unfold/releases/download/1.9.0/Unfold-1.9.0.dmg" length="4249459" type="application/octet-stream" sparkle:edSignature="VvWundAx515n34tTZr9oJ4sznp2xi9Q23yrpc+a2+nhbILQNMe+CDdz+6onwFVkLGsJ+jI4AmepTiIt5X/zoDg=="/>
         </item>
     </channel>
 </rss>
