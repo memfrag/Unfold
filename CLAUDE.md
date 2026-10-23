@@ -21,14 +21,15 @@ The rendering pipeline is the core of the app and spans Swift ↔ JavaScript:
 2. **`HTMLTemplate.swift` / `buildHTML()`** produces a self-contained HTML **shell** with an empty `#content`. `marked.min.js` + `highlight.min.js` + the two highlight CSS themes are inlined from `Unfold/Resources/`. The Markdown is **not** embedded in the page — instead the script defines `window._render(md)`, which parses the Markdown into `#content`, highlights code, wires copy buttons, extracts the TOC, tags each top-level block with a `data-line` source-line attribute, and preserves scroll. One-time setup (link/scroll/mousemove listeners, `_goBack`/`_goForward`/`_scrollToHeading`, `_syncToLine`, link-preview, scroll history) lives outside `_render`.
 3. **`MarkdownWebView`** (`NSViewRepresentable`) hosts the `WKWebView` and owns the bridge. The initial render is driven from `webView(_:didFinish:)`; live edits re-render in place (debounced ~1s) without reloading the page.
 
-### Mermaid diagrams
+### Diagrams: Mermaid and Graphviz
 
-A ` ```mermaid ` fence is emitted by `renderer.code` as an empty `div.mermaid-diagram` carrying its source in `data-source` (so `hljs` and the Copy button skip it, and `data-line` still lands on it). `mermaid.min.js` is ~3.5 MB, so unlike marked/highlight.js it is **not** inlined: a page that has a diagram fetches it once from `unfold-resource://bundle/mermaid.min.js`, which `LocalResourceSchemeHandler` serves from an allow-list.
+A ` ```mermaid `, ` ```dot ` or ` ```graphviz ` fence is emitted by `renderer.code` as an empty `div.diagram` carrying `data-kind` and `data-source` (so `hljs` and the Copy button skip it, and `data-line` still lands on it); `diagramKinds` maps fence languages to a renderer in `diagramRenderers`. The libraries are big — `mermaid.min.js` ~3.5 MB, `viz-global.js` (Graphviz compiled to WebAssembly) ~1.3 MB — so unlike marked/highlight.js they are **not** inlined: a page fetches each once, when it first has a diagram of that kind, from `unfold-resource://bundle/<name>`, which `LocalResourceSchemeHandler` serves from an allow-list.
 
-- Every diagram is rendered **twice**, light and dark, and CSS picks one by `prefers-color-scheme` (with `@media print` forcing light) — the same trick as the two highlight.js themes, so the appearance toggle, Print and Export PDF need no re-render. Mermaid's theme is global config, so renders are serialized through a queue.
-- Some Mermaid ids are fixed (`#arrowhead`, `#drop-shadow`) and `url(#…)` binds to the first in the document — the hidden copy, often. `uniquifyIds` suffixes every id but the SVG root's and rewrites the references.
-- Rendered pairs are cached by source, so a re-render while typing refills unchanged diagrams synchronously; a generation counter drops a stale async pass.
+- Every diagram is rendered **twice**, light and dark, and CSS picks one by `prefers-color-scheme` (with `@media print` forcing light) — the same trick as the two highlight.js themes, so the appearance toggle, Print and Export PDF need no re-render. Mermaid has themes; Graphviz doesn't, so it gets the page's text color as the default graph/node/edge `color`/`fontcolor` (a color set in the source wins). Mermaid's theme is global config, so renders are serialized through a queue.
+- Ids repeat between diagrams — some of Mermaid's are fixed (`#arrowhead`), every Graphviz graph has `#graph0` — and `url(#…)` binds to the first in the document, often the hidden copy. `uniquifyIds` suffixes every id but Mermaid's SVG root and rewrites the references.
+- Rendered pairs are cached by kind + source, so a re-render while typing refills unchanged diagrams synchronously; a generation counter drops a stale async pass. A source that fails to parse caches its error; a library that fails to load doesn't, so the next render retries.
 - `_render` therefore returns a Promise, and `renderNow()` runs `await window._render(md)` so `restorePendingScroll()` happens once diagrams have their real height.
+- PlantUML was considered and left out: it is Java, its JS port is unmaintained, and a server would send document text off the machine.
 
 ### The Swift ↔ JS bridge
 

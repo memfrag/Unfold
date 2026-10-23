@@ -300,20 +300,25 @@ func buildHTML() -> String {
 
     /* Each diagram is drawn in both themes; the scheme picks one, as it does
        for the highlight.js themes below. */
-    .mermaid-diagram {
+    .diagram {
         margin: 1em 0;
         text-align: center;
         overflow-x: auto;
     }
 
-    .mermaid-dark { display: none; }
-
-    @media (prefers-color-scheme: dark) {
-        .mermaid-light { display: none; }
-        .mermaid-dark { display: block; }
+    .diagram svg {
+        max-width: 100%;
+        height: auto;
     }
 
-    .mermaid-error {
+    .diagram-dark { display: none; }
+
+    @media (prefers-color-scheme: dark) {
+        .diagram-light { display: none; }
+        .diagram-dark { display: block; }
+    }
+
+    .diagram-error {
         text-align: left;
         background: var(--code-bg);
         border-left: 3px solid var(--error);
@@ -324,13 +329,13 @@ func buildHTML() -> String {
         line-height: 1.45;
     }
 
-    .mermaid-error-message {
+    .diagram-error-message {
         color: var(--error);
         white-space: pre-wrap;
         margin-bottom: 0.75em;
     }
 
-    .mermaid-error-source {
+    .diagram-error-source {
         color: var(--fg-secondary);
         white-space: pre;
         overflow-x: auto;
@@ -354,9 +359,9 @@ func buildHTML() -> String {
         body { padding: 0; }
         .copy-btn { display: none !important; }
         #link-preview { display: none !important; }
-        .mermaid-light { display: block !important; }
-        .mermaid-dark { display: none !important; }
-        pre, li, blockquote, .mermaid-diagram { break-inside: avoid; }
+        .diagram-light { display: block !important; }
+        .diagram-dark { display: none !important; }
+        pre, li, blockquote, .diagram { break-inside: avoid; }
         h1, h2, h3, h4, h5, h6 { break-after: avoid; }
     }
     </style>
@@ -406,12 +411,13 @@ func buildHTML() -> String {
                 html += '>';
                 return html;
             };
-            // A mermaid fence becomes an empty placeholder carrying its source;
-            // the diagram is drawn into it after the page is parsed.
+            // A diagram fence becomes an empty placeholder carrying its kind and
+            // source; the diagram is drawn into it after the page is parsed.
             var defaultCode = renderer.code;
             renderer.code = function(token) {
-                if ((token.lang || '').trim().split(' ')[0] === 'mermaid') {
-                    return '<div class="mermaid-diagram" data-source="' + escapeHTML(token.text) + '"></div>';
+                var kind = diagramKinds[(token.lang || '').trim().split(' ')[0].toLowerCase()];
+                if (kind) {
+                    return '<div class="diagram" data-kind="' + kind + '" data-source="' + escapeHTML(token.text) + '"></div>';
                 }
                 return defaultCode.call(this, token);
             };
@@ -423,37 +429,39 @@ func buildHTML() -> String {
                 .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
-        // ---- Mermaid ----
-        // The library is ~3.5 MB, so it isn't inlined into this shell like
-        // marked and highlight.js: a page fetches it the first time it has a
-        // diagram to draw.
-        var mermaidReady = null;
-        function loadMermaid() {
-            if (!mermaidReady) {
-                mermaidReady = new Promise(function(resolve, reject) {
+        // ---- Diagrams: Mermaid and Graphviz ----
+        // Fence languages, and the renderer each one goes to.
+        var diagramKinds = { mermaid: 'mermaid', dot: 'graphviz', graphviz: 'graphviz' };
+
+        // The libraries are large (Mermaid ~3.5 MB, viz.js ~1.3 MB), so they
+        // aren't inlined into this shell like marked and highlight.js: a page
+        // fetches each the first time it has a diagram of that kind to draw.
+        var scripts = {};
+        function loadScript(name) {
+            if (!scripts[name]) {
+                scripts[name] = new Promise(function(resolve, reject) {
                     var script = document.createElement('script');
-                    script.src = 'unfold-resource://bundle/mermaid.min.js';
-                    script.onload = function() { resolve(window.mermaid); };
+                    script.src = 'unfold-resource://bundle/' + name;
+                    script.onload = resolve;
                     script.onerror = function() {
-                        mermaidReady = null;
-                        reject(new Error('The Mermaid library could not be loaded.'));
+                        delete scripts[name];
+                        reject(new Error(name + ' could not be loaded.'));
                     };
                     document.head.appendChild(script);
                 });
             }
-            return mermaidReady;
+            return scripts[name];
         }
 
-        // Rendered diagrams by source, so a re-render while typing elsewhere
-        // refills them at once instead of blanking and redrawing each one.
-        var diagramCache = new Map();
+        var vizReady = null;
         var diagramCount = 0;
 
-        // The theme is global Mermaid config, so renders must not interleave:
-        // each waits for the one before it.
-        var mermaidQueue = Promise.resolve();
-        function renderDiagram(mermaid, source) {
-            var job = mermaidQueue.then(async function() {
+        // Each draws a source in both themes, returning { light, dark } SVG
+        // markup, or { error } for a source that doesn't parse. They throw only
+        // when their library can't be loaded.
+        var diagramRenderers = {
+            mermaid: async function(source) {
+                await loadScript('mermaid.min.js');
                 var fontFamily = getComputedStyle(document.body).fontFamily;
                 var entry = {};
                 var variants = [['light', 'default'], ['dark', 'dark']];
@@ -475,16 +483,60 @@ func buildHTML() -> String {
                     }
                 }
                 return entry;
-            });
-            mermaidQueue = job.catch(function() {});
+            },
+
+            // Graphviz has no themes, so the page's text color goes in as the
+            // default for graph, node and edge; a color set in the source wins.
+            graphviz: async function(source) {
+                await loadScript('viz-global.js');
+                if (!vizReady) {
+                    vizReady = Viz.instance().catch(function(e) { vizReady = null; throw e; });
+                }
+                var viz = await vizReady;
+                var entry = {};
+                var variants = [['light', '#1d1d1f'], ['dark', '#f5f5f7']];
+                for (var i = 0; i < variants.length; i++) {
+                    var defaults = { color: variants[i][1], fontcolor: variants[i][1], fontname: 'Helvetica' };
+                    var result = viz.render(source, {
+                        format: 'svg',
+                        graphAttributes: Object.assign({ bgcolor: 'transparent' }, defaults),
+                        nodeAttributes: defaults,
+                        edgeAttributes: defaults
+                    });
+                    if (result.status !== 'success') {
+                        var messages = result.errors.map(function(e) { return e.message; }).join('\\n');
+                        return { error: messages || 'Graphviz could not render this graph.' };
+                    }
+                    // Drop the XML declaration and doctype ahead of <svg>.
+                    var svg = result.output.substring(result.output.indexOf('<svg'));
+                    entry[variants[i][0]] = uniquifyIds(svg, 'unfold-graphviz-' + (++diagramCount));
+                }
+                return entry;
+            }
+        };
+
+        // Mermaid's theme is global config, so renders must not interleave:
+        // each waits for the one before it.
+        var renderQueue = Promise.resolve();
+        function renderDiagram(kind, source) {
+            var job = renderQueue.then(function() { return diagramRenderers[kind](source); });
+            renderQueue = job.catch(function() {});
             return job;
         }
 
-        // Some of Mermaid's ids are fixed (#arrowhead, #drop-shadow), and
-        // url(#…) resolves to the first match in the document — with a light
-        // and a dark copy of every diagram on the page, often the hidden one.
-        // Suffix every id but the root's (already unique, and what the
-        // diagram's own stylesheet is scoped to) and rewrite references.
+        // Rendered diagrams by kind and source, so a re-render while typing
+        // elsewhere refills them at once instead of blanking and redrawing.
+        var diagramCache = new Map();
+        function diagramKey(el) {
+            return el.getAttribute('data-kind') + ':' + el.getAttribute('data-source');
+        }
+
+        // Ids repeat between diagrams — some of Mermaid's are fixed
+        // (#arrowhead, #drop-shadow), and every Graphviz graph has #graph0,
+        // #node1 — and url(#…) resolves to the first match in the document:
+        // with a light and a dark copy of every diagram on the page, often the
+        // hidden one. Suffix every id but the root's (for Mermaid, already
+        // unique and what its stylesheet is scoped to) and rewrite references.
         function uniquifyIds(svg, rootId) {
             var template = document.createElement('template');
             template.innerHTML = svg;
@@ -513,13 +565,13 @@ func buildHTML() -> String {
 
         function fillDiagram(el, entry) {
             if (entry.error) {
-                el.innerHTML = '<div class="mermaid-error">'
-                    + '<div class="mermaid-error-message">' + escapeHTML(entry.error) + '</div>'
-                    + '<div class="mermaid-error-source">' + escapeHTML(el.getAttribute('data-source')) + '</div>'
+                el.innerHTML = '<div class="diagram-error">'
+                    + '<div class="diagram-error-message">' + escapeHTML(entry.error) + '</div>'
+                    + '<div class="diagram-error-source">' + escapeHTML(el.getAttribute('data-source')) + '</div>'
                     + '</div>';
             } else {
-                el.innerHTML = '<div class="mermaid-light">' + entry.light + '</div>'
-                    + '<div class="mermaid-dark">' + entry.dark + '</div>';
+                el.innerHTML = '<div class="diagram-light">' + entry.light + '</div>'
+                    + '<div class="diagram-dark">' + entry.dark + '</div>';
             }
         }
 
@@ -527,34 +579,35 @@ func buildHTML() -> String {
         function fillCachedDiagrams() {
             var pending = [];
             var seen = new Set();
-            contentEl.querySelectorAll('.mermaid-diagram').forEach(function(el) {
-                var source = el.getAttribute('data-source');
-                seen.add(source);
-                var entry = diagramCache.get(source);
+            contentEl.querySelectorAll('.diagram').forEach(function(el) {
+                var key = diagramKey(el);
+                seen.add(key);
+                var entry = diagramCache.get(key);
                 if (entry) fillDiagram(el, entry); else pending.push(el);
             });
-            diagramCache.forEach(function(_, source) {
-                if (!seen.has(source)) diagramCache.delete(source);
+            diagramCache.forEach(function(_, key) {
+                if (!seen.has(key)) diagramCache.delete(key);
             });
             return pending;
         }
 
         async function renderPendingDiagrams(els, generation) {
-            var mermaid;
-            try {
-                mermaid = await loadMermaid();
-            } catch (e) {
-                els.forEach(function(el) { fillDiagram(el, { error: e.message }); });
-                return;
-            }
             for (var i = 0; i < els.length; i++) {
                 if (generation !== renderGeneration) return;
-                var source = els[i].getAttribute('data-source');
-                var entry = diagramCache.get(source);
+                var key = diagramKey(els[i]);
+                var entry = diagramCache.get(key);
                 if (!entry) {
-                    entry = await renderDiagram(mermaid, source);
+                    try {
+                        entry = await renderDiagram(els[i].getAttribute('data-kind'), els[i].getAttribute('data-source'));
+                    } catch (e) {
+                        // A library that failed to load is no fault of the
+                        // source, so this isn't cached: the next render retries.
+                        if (generation !== renderGeneration) return;
+                        fillDiagram(els[i], { error: (e && e.message) || String(e) });
+                        continue;
+                    }
                     if (generation !== renderGeneration) return;
-                    diagramCache.set(source, entry);
+                    diagramCache.set(key, entry);
                 }
                 fillDiagram(els[i], entry);
             }

@@ -714,7 +714,7 @@ struct MarkdownWebView: NSViewRepresentable {
 
 class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     /// The bundle files `unfold-resource://bundle/<name>` may serve.
-    private static let bundleScripts: Set<String> = ["mermaid.min.js"]
+    private static let bundleScripts: Set<String> = ["mermaid.min.js", "viz-global.js"]
 
     let baseDirectory: URL?
     var pendingHTML: String?
@@ -748,7 +748,7 @@ class LocalResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         }
 
         // Serve a script from the app bundle that is too large to inline into
-        // the shell, fetched only by pages that need it (Mermaid).
+        // the shell, fetched only by pages that need it (Mermaid, Graphviz).
         if url.host == "bundle" {
             let name = String(url.path.dropFirst())
             guard Self.bundleScripts.contains(name),
